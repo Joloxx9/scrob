@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import engine, Base
 import models # noqa: F401
-from routers import webhooks, media, history, ratings, sync, shows, auth, lists, oidc, profile, trakt, simkl, mdblist, bingebase, comments, admin, compat, export, yamtrack, calendar
+from routers import webhooks, media, history, ratings, sync, shows, auth, lists, oidc, profile, trakt, simkl, wetrakr, mdblist, bingebase, comments, admin, compat, export, yamtrack, calendar
 
 from core.access_log import install as install_access_log_redaction
 install_access_log_redaction()
@@ -41,6 +41,7 @@ async def _auto_sync_scheduler():
     )
     from routers.trakt import run_trakt_sync, _run_trakt_push
     from routers.simkl import run_simkl_sync, _run_simkl_push
+    from routers.wetrakr import run_wetrakr_sync, _run_wetrakr_push
     from routers.mdblist import run_mdblist_sync, run_mdblist_push
 
     # Trakt/Simkl/MDBList are single, user-level cloud connections (no
@@ -64,6 +65,15 @@ async def _auto_sync_scheduler():
             "push_flags": ("simkl_push_watched", "simkl_push_ratings"),
             "pull_runner": run_simkl_sync,
             "push_runner": _run_simkl_push,
+        },
+        {
+            "source": CollectionSource.wetrakr,
+            "connected_field": "wetrakr_access_token",
+            "auto_sync_field": "wetrakr_auto_sync_interval",
+            "auto_push_field": "wetrakr_auto_push_interval",
+            "push_flags": ("wetrakr_push_watched", "wetrakr_push_ratings"),
+            "pull_runner": run_wetrakr_sync,
+            "push_runner": _run_wetrakr_push,
         },
         {
             "source": CollectionSource.mdblist,
@@ -747,6 +757,7 @@ app.include_router(lists.router, prefix="/lists", tags=["lists"])
 app.include_router(profile.router, prefix="/profile", tags=["profile"])
 app.include_router(trakt.router, prefix="/trakt", tags=["trakt"])
 app.include_router(simkl.router, prefix="/simkl", tags=["simkl"])
+app.include_router(wetrakr.router, prefix="/wetrakr", tags=["wetrakr"])
 app.include_router(mdblist.router, prefix="/mdblist", tags=["mdblist"])
 app.include_router(bingebase.router, prefix="/bingebase", tags=["bingebase"])
 app.include_router(comments.router, prefix="/comments", tags=["comments"])

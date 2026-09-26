@@ -475,6 +475,19 @@ export interface UserSettings {
   simkl_push_ratings: boolean;
   simkl_scrobble: boolean;
 
+  // WeTrakr — no client_id field: Scrob ships a single app-owned key server-side
+  wetrakr_connected: boolean;
+  wetrakr_sync_watched: boolean;
+  wetrakr_sync_ratings: boolean;
+  wetrakr_push_watched: boolean;
+  wetrakr_push_ratings: boolean;
+  wetrakr_sync_lists: boolean;
+  wetrakr_push_lists: boolean;
+  wetrakr_sync_comments: boolean;
+  wetrakr_push_comments: boolean;
+  wetrakr_auto_sync_interval: number | null;
+  wetrakr_auto_push_interval: number | null;
+
   // MDBList
   mdblist_api_key: string | null;
   mdblist_connected: boolean;
@@ -614,6 +627,7 @@ export interface ConnectionStatus {
   sonarr: ServiceStatus;
   trakt: ServiceStatus;
   simkl: ServiceStatus;
+  wetrakr: ServiceStatus;
   mdblist: ServiceStatus;
 }
 
