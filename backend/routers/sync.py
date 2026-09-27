@@ -6719,6 +6719,7 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
             lookup_media_ids = missing_ids | season_rating_ids
             media_info: dict[int, Media] = {}
             show_tmdb_map: dict[int, int] = {}  # show.id → show.tmdb_id
+            show_tvdb_map: dict[int, int] = {}  # show.id → show.tvdb_id, fallback for TVDB-only shows (#436)
             show_title_map: dict[int, str] = {}  # show.id → show.title, for grouping lookup-failed warnings (#400)
 
             if lookup_media_ids:
@@ -6735,10 +6736,12 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
                     show_ids_list = list(show_ids_needed)
                     for i in range(0, len(show_ids_list), _MAX_IN_PARAMS):
                         chunk = show_ids_list[i : i + _MAX_IN_PARAMS]
-                        show_rows = await db.execute(select(Show.id, Show.tmdb_id, Show.title).where(Show.id.in_(chunk)))
+                        show_rows = await db.execute(select(Show.id, Show.tmdb_id, Show.tvdb_id, Show.title).where(Show.id.in_(chunk)))
                         for row in show_rows.all():
                             show_tmdb_map[row[0]] = row[1]
-                            show_title_map[row[0]] = row[2]
+                            if row[2] is not None:
+                                show_tvdb_map[row[0]] = row[2]
+                            show_title_map[row[0]] = row[3]
 
             # For Jellyfin/Emby, AnyProviderIdEquals can't be trusted to
             # narrow results on every server version - a per-item lookup can
@@ -6750,12 +6753,23 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
             # request against the unreliable filter.
             jellyfin_movie_index: dict[int, str] = {}
             jellyfin_series_index: dict[int, str] = {}
+            jellyfin_series_tvdb_index: dict[int, str] = {}
             if conn.type in ("jellyfin", "emby") and media_info:
                 client_mod = jellyfin if conn.type == "jellyfin" else emby
                 if any(m.media_type == MediaType.movie for m in media_info.values()):
                     jellyfin_movie_index = await client_mod.build_tmdb_index(conn.url, conn.token, "Movie")
                 if any(m.media_type == MediaType.episode for m in media_info.values()):
                     jellyfin_series_index = await client_mod.build_tmdb_index(conn.url, conn.token, "Series")
+                    # Shows Scrob only ever matched via TVDB (e.g. a legacy-agent
+                    # Plex library) have no Show.tmdb_id at all, so the index
+                    # above can never resolve them - only build this second,
+                    # TVDB-keyed index when at least one such show is actually
+                    # in play (#436).
+                    if any(
+                        m.media_type == MediaType.episode and m.show_id and not show_tmdb_map.get(m.show_id) and show_tvdb_map.get(m.show_id)
+                        for m in media_info.values()
+                    ):
+                        jellyfin_series_tvdb_index = await client_mod.build_tvdb_index(conn.url, conn.token, "Series")
 
             # Build push list: (action, source_id, [rating])
             push_items: list[tuple] = []
@@ -6897,14 +6911,19 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
                         return jellyfin_movie_index.get(m.tmdb_id)
                 elif m.media_type == MediaType.episode:
                     show_tmdb = show_tmdb_map.get(m.show_id) if m.show_id else None
-                    if not show_tmdb or m.season_number is None or m.episode_number is None:
+                    show_tvdb = show_tvdb_map.get(m.show_id) if m.show_id else None
+                    if (not show_tmdb and not show_tvdb) or m.season_number is None or m.episode_number is None:
                         return None
                     if push_state.recent_miss(mid):
                         return None
                     if conn.type == "plex":
+                        if not show_tmdb:
+                            return None
                         found = await plex.find_episode_by_ids(conn.url, conn.token, show_tmdb, m.season_number, m.episode_number)
                     else:
-                        series_id = jellyfin_series_index.get(show_tmdb)
+                        series_id = jellyfin_series_index.get(show_tmdb) if show_tmdb else None
+                        if not series_id and show_tvdb:
+                            series_id = jellyfin_series_tvdb_index.get(show_tvdb)
                         if not series_id:
                             return None
                         client_mod = jellyfin if conn.type == "jellyfin" else emby
