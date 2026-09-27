@@ -94,6 +94,9 @@ class UserSettings(Base):
     trakt_push_dropped       : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     trakt_scrobble           : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
+    # Show Trakt's public comments (not the user's own) on movie/show/season/episode pages
+    trakt_show_comments      : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
     # Trakt list import/export
     trakt_sync_lists         : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     trakt_push_lists         : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

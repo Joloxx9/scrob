@@ -464,6 +464,7 @@ export interface UserSettings {
   trakt_push_ratings: boolean;
   trakt_push_lists: boolean;
   trakt_scrobble: boolean;
+  trakt_show_comments: boolean;
 
   // Simkl
   simkl_client_id: string | null;
@@ -1156,6 +1157,30 @@ export interface Comment {
   updated_at?: string | null;
 }
 
+export interface TraktComment {
+  id: number;
+  comment: string;
+  spoiler: boolean;
+  review: boolean;
+  replies: number;
+  likes: number;
+  created_at: string;
+  user: {
+    username: string;
+    private: boolean;
+    name: string | null;
+    vip: boolean;
+    ids: { slug: string };
+  };
+}
+
+export interface TraktCommentsResponse {
+  enabled: boolean;
+  resolved: boolean;
+  comments: TraktComment[];
+  trakt_url?: string;
+}
+
 // API calls
 export const api = {
   auth: {
@@ -1563,6 +1588,11 @@ export const api = {
       patch<{ id: number; content: string; updated_at: string | null }>(`/comments/${id}`, { content }, token),
     delete: (id: number, token: string) =>
       del<{ message: string }>(`/comments/${id}`, token),
+  },
+
+  traktComments: {
+    list: (params: { media_type: "movie" | "show"; tmdb_id?: number; tvdb_id?: number; season_number?: number; episode_number?: number }, token?: string) =>
+      get<TraktCommentsResponse>("/trakt/comments", params, token),
   },
 
   admin: {
