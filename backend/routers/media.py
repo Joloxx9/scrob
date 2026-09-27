@@ -5359,6 +5359,7 @@ async def get_media_details(
                     }
                     for c in (ep_data.get("credits") or {}).get("cast", [])[:12]
                 ],
+                "crew": tmdb.notable_crew(ep_data.get("credits") or {}, profile_size="w185"),
                 "genres": (show.tmdb_data or {}).get("genres", []),
                 "in_library": ep_state.get("in_library", False),
                 "playable": playable,
@@ -5531,6 +5532,7 @@ async def get_media_details(
                 }
                 for c in data.get("credits", {}).get("cast", [])[:12]
             ],
+            "crew": tmdb.notable_crew(data.get("credits", {})),
             "where_to_watch": where_to_watch,
         }
     except Exception as e:

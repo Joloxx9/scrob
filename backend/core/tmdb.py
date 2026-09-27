@@ -11,6 +11,12 @@ _RETRYABLE = (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolEr
 
 DEFAULT_CACHE_TTL = 1800  # 30 minutes — TMDB metadata/discovery results don't need to be fresher than this
 
+# Crew jobs surfaced in a title's "Crew" tab - a curated allowlist, not a
+# department filter: TMDB's "Production" department alone pulls in Casting,
+# Production Coordinator, Assistant Director tiers, etc., which is far more
+# than a viewer means by "who directed/wrote/produced this".
+NOTABLE_CREW_JOBS = {"Director", "Writer", "Screenplay", "Story", "Teleplay", "Producer", "Executive Producer", "Co-Producer"}
+
 # Request-path budget. Kept deliberately tight: these calls sit inside
 # page-render fan-outs (home page enrich_with_state, Next Up, etc.), so a wide
 # retry window turns "TMDB is unreachable" into a multi-minute hang and a proxy
@@ -377,6 +383,42 @@ def poster_url(path: str, size: str = "w500") -> str | None:
     if not path:
         return None
     return f"{TMDB_IMAGE_BASE}/{size}{path}"
+
+
+def notable_crew(credits: dict, limit: int = 12, profile_size: str = "w500") -> list[dict]:
+    """Director/writer/producer crew for a title's "Crew" tab, deduped by
+    person id - a writer-director (e.g. Richard Kelly on Donnie Darko) is one
+    entry with a combined job label, not two rows for the same person."""
+    by_id: dict[int, dict] = {}
+    order: list[int] = []
+    for c in credits.get("crew", []):
+        job = c.get("job")
+        if job not in NOTABLE_CREW_JOBS:
+            continue
+        pid = c.get("id")
+        if pid is None:
+            continue
+        if pid not in by_id:
+            by_id[pid] = {
+                "tmdb_id": pid,
+                "name": c.get("name"),
+                "jobs": [job],
+                "profile_path": poster_url(c.get("profile_path"), size=profile_size),
+            }
+            order.append(pid)
+        elif job not in by_id[pid]["jobs"]:
+            by_id[pid]["jobs"].append(job)
+
+    result = []
+    for pid in order[:limit]:
+        entry = by_id[pid]
+        result.append({
+            "tmdb_id": entry["tmdb_id"],
+            "name": entry["name"],
+            "job": ", ".join(entry["jobs"]),
+            "profile_path": entry["profile_path"],
+        })
+    return result
 
 
 async def get_person(person_id: int, api_key: str = None) -> dict:
