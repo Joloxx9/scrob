@@ -1235,6 +1235,8 @@ async def _fan_out_changes_to_other_connections(
                 )
             return True
 
+        watched_at_by_media = await _latest_watched_at(db, user_id, list(new_watched_ids)) if new_watched_ids else {}
+
         for conn in push_candidates:
             if conn.type == "stremio":
                 try:
@@ -1284,10 +1286,10 @@ async def _fan_out_changes_to_other_connections(
                             # UserDataSaved webhook can echo this back fast enough that a
                             # post-await registration would already be too late (#247/#251).
                             mark_pushed_watched(user_id, mid)
-                            push_tasks.append(_guarded(jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid)))
+                            push_tasks.append(_guarded(jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, played_at=watched_at_by_media.get(mid))))
                         elif conn.type == "emby":
                             mark_pushed_watched(user_id, mid)
-                            push_tasks.append(_guarded(emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid)))
+                            push_tasks.append(_guarded(emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, played_at=watched_at_by_media.get(mid))))
             if conn.push_ratings:
                 for (mid, season_number), rating in server_rating_changes.items():
                     media = media_by_id.get(mid)
@@ -6672,6 +6674,7 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
             # the same value (#422): every re-sent rating is a write on the
             # server, every re-sent watched flag a read first.
             watched_todo = {mid for mid in watched_ids if not push_state.unchanged(mid, WATCHED, 1.0)}
+            watched_at_by_media = await _latest_watched_at(db, user_id, list(watched_todo)) if watched_todo else {}
             ratings_todo = {
                 (mid, season_number): rating
                 for (mid, season_number), rating in ratings_map.items()
@@ -6995,9 +6998,9 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
                                     await _record_plex_pending_push(user_id, item[2])
                                 return ok
                             elif conn.type == "jellyfin":
-                                return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                                return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client, played_at=watched_at_by_media.get(item[2]))
                             else:
-                                return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                                return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client, played_at=watched_at_by_media.get(item[2]))
                         else:
                             return await _set_rating(client, item[1], item[2])
                     except Exception:
@@ -7041,10 +7044,10 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
                                 return ok
                             elif conn.type == "jellyfin":
                                 mark_pushed_watched(user_id, mid)
-                                return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                                return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client, played_at=watched_at_by_media.get(mid))
                             else:
                                 mark_pushed_watched(user_id, mid)
-                                return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                                return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client, played_at=watched_at_by_media.get(mid))
                         else:
                             return await _set_rating(client, sid, item[2])
                     except Exception:
@@ -7071,10 +7074,13 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
                             return True
                         for mid in mids:
                             mark_pushed_watched(user_id, mid)
+                        # A combined file's rows share one server item, so any
+                        # one row's watched_at stands in for the group.
+                        group_played_at = watched_at_by_media.get(next(iter(mids)))
                         if conn.type == "jellyfin":
-                            return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                            return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client, played_at=group_played_at)
                         else:
-                            return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                            return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client, played_at=group_played_at)
                     except Exception:
                         return False
 
