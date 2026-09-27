@@ -1169,7 +1169,15 @@ const bottomNavItem = (active: boolean) =>
               btn.classList.remove('bg-zinc-800', 'text-zinc-500', 'hover:bg-amber-500/10', 'hover:text-amber-400');
               btn.classList.add('bg-amber-500/20', 'text-amber-400', 'hover:bg-amber-500/40');
               btn.querySelector('svg')!.setAttribute('fill', 'currentColor');
-              btn.querySelector('span')!.textContent = i.toFixed(1);
+              const rateSpans = btn.querySelectorAll('span');
+              rateSpans[0]!.textContent = i.toFixed(1);
+              let mobileRateSpan = rateSpans[1];
+              if (!mobileRateSpan) {
+                mobileRateSpan = document.createElement('span');
+                mobileRateSpan.className = 'md:hidden text-[9px] font-bold leading-none';
+                btn.appendChild(mobileRateSpan);
+              }
+              mobileRateSpan.textContent = i.toFixed(1);
               btn.title = `Your rating: ${i.toFixed(1)}/10`;
             }
             closeRatingPopover();
@@ -1201,7 +1209,9 @@ const bottomNavItem = (active: boolean) =>
             btn.classList.remove('bg-amber-500/20', 'text-amber-400', 'hover:bg-amber-500/40');
             btn.classList.add('bg-zinc-800', 'text-zinc-500', 'hover:bg-amber-500/10', 'hover:text-amber-400');
             btn.querySelector('svg')!.setAttribute('fill', 'none');
-            btn.querySelector('span')!.textContent = 'Rate';
+            const rateSpans = btn.querySelectorAll('span');
+            rateSpans[0]!.textContent = 'Rate';
+            rateSpans[1]?.remove();
             btn.title = 'Rate this';
           }
           closeRatingPopover();

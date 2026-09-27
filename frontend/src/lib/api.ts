@@ -81,6 +81,21 @@ export interface CastMember {
   profile_path: string | null;
 }
 
+export interface CrewMember {
+  tmdb_id: number;
+  name: string;
+  job: string;
+  profile_path: string | null;
+}
+
+export interface TvdbCrewMember {
+  tmdb_id: null;
+  person_id: number | null;
+  name: string;
+  job: string;
+  profile_path: string | null;
+}
+
 export interface Network {
   id: number;
   name: string;
@@ -191,6 +206,7 @@ export interface EpisodeDetail {
   user_rating?: number | null;
   play_count?: number;
   cast: CastMember[];
+  crew: CrewMember[];
   guest_stars: CastMember[];
   episodes: EpisodeItem[];
   season?: {
@@ -464,6 +480,7 @@ export interface UserSettings {
   trakt_push_ratings: boolean;
   trakt_push_lists: boolean;
   trakt_scrobble: boolean;
+  trakt_show_comments: boolean;
 
   // Simkl
   simkl_client_id: string | null;
@@ -648,6 +665,7 @@ export interface MediaItem {
   runtime?: number | null;
   genres?: string[];
   cast?: CastMember[];
+  crew?: CrewMember[];
   tagline?: string | null;
   status?: string | null;
   original_language?: string | null;
@@ -887,6 +905,7 @@ export interface TvdbEpisodeDetail {
     subtitle_languages: string[] | null;
   } | null;
   cast: { tmdb_id: null; person_id: number | null; name: string; character: string; profile_path: string | null }[];
+  crew: TvdbCrewMember[];
   episodes: { episode_number: number; name: string | null }[];
   show: { id: number | null; tvdb_id: number; tmdb_id: number | null; episode_order: "tvdb"; title: string; poster_path: string | null; backdrop_path: string | null };
   season: { name: string; season_number: number; poster_path: string | null };
@@ -965,6 +984,7 @@ export interface TvdbShow {
   seasons: TvdbSeasonMeta[];
   seasons_meta: TvdbSeasonMeta[];
   cast: { tmdb_id: null; person_id: number | null; name: string; character: string; profile_path: string | null }[];
+  crew: TvdbCrewMember[];
   in_library: boolean;
   watched: boolean;
   watch_pct?: number;
@@ -1014,6 +1034,7 @@ export interface Show {
   seasons_meta: SeasonMeta[];
   season_states: Record<number, SeasonState>;
   cast: CastMember[];
+  crew: CrewMember[];
   networks: Network[];
   recommendations: MediaItem[];
   tagline: string | null;
@@ -1154,6 +1175,30 @@ export interface Comment {
   is_spoiler: boolean;
   created_at: string;
   updated_at?: string | null;
+}
+
+export interface TraktComment {
+  id: number;
+  comment: string;
+  spoiler: boolean;
+  review: boolean;
+  replies: number;
+  likes: number;
+  created_at: string;
+  user: {
+    username: string;
+    private: boolean;
+    name: string | null;
+    vip: boolean;
+    ids: { slug: string };
+  };
+}
+
+export interface TraktCommentsResponse {
+  enabled: boolean;
+  resolved: boolean;
+  comments: TraktComment[];
+  trakt_url?: string;
 }
 
 // API calls
@@ -1563,6 +1608,11 @@ export const api = {
       patch<{ id: number; content: string; updated_at: string | null }>(`/comments/${id}`, { content }, token),
     delete: (id: number, token: string) =>
       del<{ message: string }>(`/comments/${id}`, token),
+  },
+
+  traktComments: {
+    list: (params: { media_type: "movie" | "show"; tmdb_id?: number; tvdb_id?: number; season_number?: number; episode_number?: number }, token?: string) =>
+      get<TraktCommentsResponse>("/trakt/comments", params, token),
   },
 
   admin: {

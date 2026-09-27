@@ -133,14 +133,14 @@ async def _push_watch_state(
                     label = f"jellyfin connection {conn.id}"
                     if watched:
                         mark_pushed_watched(user_id, coll_media_id)
-                        tasks.append((label, jellyfin_client.mark_watched(conn.url, conn.token, conn.server_user_id, coll_file.source_id)))
+                        tasks.append((label, jellyfin_client.mark_watched(conn.url, conn.token, conn.server_user_id, coll_file.source_id, played_at=resolved_watched_at.get(coll_media_id))))
                     else:
                         tasks.append((label, jellyfin_client.mark_unwatched(conn.url, conn.token, conn.server_user_id, coll_file.source_id)))
                 elif coll_file.source == CollectionSource.emby:
                     label = f"emby connection {conn.id}"
                     if watched:
                         mark_pushed_watched(user_id, coll_media_id)
-                        tasks.append((label, emby_client.mark_watched(conn.url, conn.token, conn.server_user_id, coll_file.source_id)))
+                        tasks.append((label, emby_client.mark_watched(conn.url, conn.token, conn.server_user_id, coll_file.source_id, played_at=resolved_watched_at.get(coll_media_id))))
                     else:
                         tasks.append((label, emby_client.mark_unwatched(conn.url, conn.token, conn.server_user_id, coll_file.source_id)))
 

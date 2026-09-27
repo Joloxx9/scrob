@@ -164,6 +164,7 @@ class UserSettings(BaseModel):
     trakt_push_dropped: Optional[bool] = None
     trakt_push_lists: Optional[bool] = None
     trakt_scrobble: Optional[bool] = None
+    trakt_show_comments: Optional[bool] = None
     trakt_auto_sync_interval: Optional[float] = None
     trakt_auto_push_interval: Optional[float] = None
 
