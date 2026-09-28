@@ -1074,12 +1074,16 @@ async def find_by_imdb(
 async def search_tvdb(
     q: str = Query(..., min_length=2),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_api_key),
+    current_user: User | None = Depends(get_optional_user_or_api_key),
 ):
+    if current_user is None:
+        await require_anon_nav_allowed(db)
+    effective_user_id = current_user.id if current_user else ANON_USER_ID
+
     from routers.shows import get_user_tvdb_key
     from core import tvdb as tvdb_client
 
-    api_key = await get_user_tvdb_key(db, current_user.id)
+    api_key = await get_user_tvdb_key(db, effective_user_id)
     if not api_key:
         raise HTTPException(status_code=400, detail="TVDB API key not configured")
 

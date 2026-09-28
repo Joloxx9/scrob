@@ -88,6 +88,23 @@ async def get_user_tvdb_key(db: AsyncSession, user_id: int) -> str | None:
     return None
 
 
+async def _find_local_show_for_tvdb(
+    db: AsyncSession, tvdb_id: int, series_tmdb_id: int | None
+) -> ShowModel | None:
+    """The local Show for a TVDB series, matched by tvdb_id or (when TVDB
+    cross-links one) by tmdb_id. series_tmdb_id is often None - a bare
+    `ShowModel.tmdb_id == None` compiles to `tmdb_id IS NULL`, not "matches
+    nothing", so ORing it in unconditionally would match every other
+    TVDB-only show in the library and raise MultipleResultsFound the moment
+    there's more than one (500 on a show as unremarkable as thetvdb.com's
+    own "Formula 1" page)."""
+    conditions = [ShowModel.tvdb_id == tvdb_id]
+    if series_tmdb_id is not None:
+        conditions.append(ShowModel.tmdb_id == series_tmdb_id)
+    result = await db.execute(select(ShowModel).where(or_(*conditions)))
+    return result.scalar_one_or_none()
+
+
 async def _enrich_tvdb_seasons(
     seasons: list[dict],
     mappings: list[EpisodeOrderMapping],
@@ -2286,15 +2303,7 @@ async def get_tvdb_show(
 
     series_tmdb_id = show_data.get("tmdb_id_cross")
     series_tmdb_id = int(series_tmdb_id) if series_tmdb_id else None
-    show_result = await db.execute(
-        select(ShowModel).where(
-            or_(
-                ShowModel.tvdb_id == tvdb_id,
-                ShowModel.tmdb_id == series_tmdb_id,
-            )
-        )
-    )
-    show = show_result.scalar_one_or_none()
+    show = await _find_local_show_for_tvdb(db, tvdb_id, series_tmdb_id)
     if show is None:
         if series_tmdb_id:
             tmdb_api_key_for_show = await get_user_tmdb_key(db, effective_user_id)
@@ -2631,15 +2640,7 @@ async def get_tvdb_season(
 
     series_tmdb_id = show_data.get("tmdb_id_cross")
     series_tmdb_id = int(series_tmdb_id) if series_tmdb_id else None
-    show_result = await db.execute(
-        select(ShowModel).where(
-            or_(
-                ShowModel.tvdb_id == tvdb_id,
-                ShowModel.tmdb_id == series_tmdb_id,
-            )
-        )
-    )
-    show = show_result.scalar_one_or_none()
+    show = await _find_local_show_for_tvdb(db, tvdb_id, series_tmdb_id)
     if show is None:
         if series_tmdb_id:
             tmdb_api_key_for_show = await get_user_tmdb_key(db, effective_user_id)
@@ -3008,15 +3009,7 @@ async def get_tvdb_episode(
 
     series_tmdb_id = show_data.get("tmdb_id_cross")
     series_tmdb_id = int(series_tmdb_id) if series_tmdb_id else None
-    show_result = await db.execute(
-        select(ShowModel).where(
-            or_(
-                ShowModel.tvdb_id == tvdb_id,
-                ShowModel.tmdb_id == series_tmdb_id,
-            )
-        )
-    )
-    show = show_result.scalar_one_or_none()
+    show = await _find_local_show_for_tvdb(db, tvdb_id, series_tmdb_id)
     if show is None:
         if series_tmdb_id:
             tmdb_api_key = await get_user_tmdb_key(db, effective_user_id)

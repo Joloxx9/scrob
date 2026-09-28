@@ -111,6 +111,12 @@ def tvdb_language(metadata_language: str | None) -> str | None:
 def _image_url(path: str | None) -> str | None:
     if not path:
         return None
+    if "/images/missing/" in path:
+        # TheTVDB's own "no artwork" stock graphic (e.g.
+        # https://artworks.thetvdb.com/banners/images/missing/series.jpg) -
+        # treat it the same as no image at all so callers fall back to their
+        # own placeholder instead of showing TVDB's stock art.
+        return None
     if path.startswith("http"):
         return path
     return f"{TVDB_IMAGE_BASE}{path}"

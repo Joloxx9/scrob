@@ -95,7 +95,9 @@ const days = Object.keys(byDay);
                   {poster ? (
                     <img src={poster} alt="" class="w-10 rounded-md object-cover shrink-0" loading="lazy" decoding="async" style="height:60px" />
                   ) : (
-                    <div class="w-10 shrink-0 text-2xl text-center opacity-30" style="height:60px;line-height:60px">📺</div>
+                    <div class="w-10 shrink-0 flex items-center justify-center text-zinc-600" style="height:60px">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="45%" height="45%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="15" x="2" y="7" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+                    </div>
                   )}
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
