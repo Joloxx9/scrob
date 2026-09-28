@@ -17,6 +17,10 @@ class List(Base):
     privacy_level : Mapped[PrivacyLevel]  = mapped_column(SQLEnum(PrivacyLevel), default=PrivacyLevel.private, nullable=False, server_default=PrivacyLevel.private.value)
     trakt_slug    : Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     mdblist_slug : Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # TMDB's own numeric list id - links a local List to the TMDB list it was
+    # imported from, so re-importing the same list adds only new items
+    # instead of creating a duplicate local list (#442).
+    tmdb_list_id : Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # WeTrakr's own numeric list id — links a local List to the remote one it
     # mirrors, set on either a pull (imported from) or a push (created on).
     # BigInteger for the same reason as Comment.wetrakr_comment_id: WeTrakr's

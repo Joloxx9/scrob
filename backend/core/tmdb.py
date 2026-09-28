@@ -4,6 +4,7 @@ import httpx
 from core.config import settings
 
 TMDB_BASE = "https://api.themoviedb.org/3"
+TMDB_BASE_V4 = "https://api.themoviedb.org/4"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
 
 # Errors that are worth retrying (transient). 404/4xx are permanent — don't retry.
@@ -549,6 +550,20 @@ async def discover_shows(
 
 async def get_collection(collection_id: int, api_key: str = None) -> dict:
     return await _get(f"{TMDB_BASE}/collection/{collection_id}", headers=get_headers(api_key))
+
+
+async def get_list(list_id: int, api_key: str = None, page: int = 1) -> dict:
+    """TMDB v4 "List" details - GET /4/list/{list_id} (#442). Unlike v3's
+    single-page, movie-only /3/list/{list_id}, v4 supports mixed movie/tv
+    lists (each result item carries media_type) and paginates at 20 items
+    per page - the response's total_pages tells the caller whether to loop.
+
+    v4 also transparently serves legacy v3-created lists (verified against
+    a real v3 list, id 1, via both endpoints) - the id space is shared, so
+    this one function covers every TMDB list a user might paste a link to.
+    Requires the same v4 read-access-token this app already stores as its
+    "TMDB API key" (get_headers's Bearer auth already is v4-style)."""
+    return await _get(f"{TMDB_BASE_V4}/list/{list_id}", headers=get_headers(api_key), params={"page": page})
 
 
 async def get_network(network_id: int, api_key: str = None) -> dict:
