@@ -197,6 +197,7 @@ class UserSettings(BaseModel):
     # MDBList — API key authentication
     mdblist_api_key: Optional[str] = None
     mdblist_connected: Optional[bool] = None  # read-only, validated by /auth/connection-status
+    has_global_mdblist_key: bool = False  # read-only; global key is for list imports only
     mdblist_sync_watched: Optional[bool] = None
     mdblist_sync_ratings: Optional[bool] = None
     mdblist_sync_watchlist: Optional[bool] = None
@@ -491,6 +492,7 @@ class PublicProfileResponse(BaseModel):
 
 class GlobalSettings(BaseModel):
     tmdb_api_key           : Optional[str] = None
+    mdblist_api_key        : Optional[str] = None
     tvdb_api_key           : Optional[str] = None
     tvdb_subscriber_pin    : Optional[str] = None
     radarr_url             : Optional[str] = None

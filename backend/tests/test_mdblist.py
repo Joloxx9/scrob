@@ -104,6 +104,92 @@ class MDBListClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(offsets, [0, 2])
         self.assertEqual(len(result["movies"]), 3)
 
+    async def test_get_list_items_uses_unified_cursor_pagination_and_cap(self) -> None:
+        cursors: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.url.path, "/lists/alice/favourites/items")
+            self.assertEqual(request.url.params["apikey"], "secret-key")
+            self.assertEqual(request.url.params["unified"], "true")
+            cursor = request.url.params.get("cursor")
+            cursors.append(cursor)
+            if cursor is None:
+                self.assertEqual(request.url.params["limit"], "3")
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"id": 1, "mediatype": "movie"},
+                        {"id": 2, "mediatype": "movie"},
+                    ],
+                    headers={
+                        "X-Has-More": "true",
+                        "X-Next-Cursor": "page-2",
+                    },
+                )
+            self.assertEqual(request.url.params["limit"], "1")
+            return httpx.Response(
+                200,
+                json=[
+                    {"id": 3, "mediatype": "show"},
+                    {"id": 4, "mediatype": "show"},
+                ],
+            )
+
+        transport = httpx.MockTransport(handler)
+        with patch.object(
+            mdblist.httpx,
+            "AsyncClient",
+            side_effect=lambda **kwargs: _REAL_ASYNC_CLIENT(transport=transport, **kwargs),
+        ):
+            result = await mdblist.get_list_items(
+                "secret-key", "alice/favourites", max_items=3
+            )
+
+        self.assertEqual(cursors, [None, "page-2"])
+        self.assertEqual([item["id"] for item in result["movies"]], [1, 2])
+        self.assertEqual([item["id"] for item in result["shows"]], [3])
+
+    async def test_get_list_accepts_movie_and_show_metadata_array(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                request.url.path,
+                "/lists/w2dwave/psychological-thrillers",
+            )
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 41,
+                        "name": "Psychological Thrillers",
+                        "description": "",
+                        "mediatype": "movie",
+                    },
+                    {
+                        "id": 42,
+                        "name": "Psychological Thrillers",
+                        "description": "Movies and shows that get in your head.",
+                        "mediatype": "show",
+                    },
+                ],
+            )
+
+        transport = httpx.MockTransport(handler)
+        with patch.object(
+            mdblist.httpx,
+            "AsyncClient",
+            side_effect=lambda **kwargs: _REAL_ASYNC_CLIENT(transport=transport, **kwargs),
+        ):
+            result = await mdblist.get_list(
+                "secret-key", "w2dwave/psychological-thrillers"
+            )
+
+        self.assertEqual(result["id"], 41)
+        self.assertEqual(result["name"], "Psychological Thrillers")
+        self.assertEqual(
+            result["description"],
+            "Movies and shows that get in your head.",
+        )
+
     async def test_push_watched_batches_each_media_type(self) -> None:
         calls: list[tuple[str, int]] = []
 

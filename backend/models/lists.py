@@ -23,6 +23,8 @@ class List(Base):
     tmdb_list_id : Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Same idea, for a list imported from TheTVDB (#442 follow-up).
     tvdb_list_id : Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # IMDb list ids have an ``ls`` prefix and are therefore stored as text.
+    imdb_list_id : Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     # WeTrakr's own numeric list id — links a local List to the remote one it
     # mirrors, set on either a pull (imported from) or a push (created on).
     # BigInteger for the same reason as Comment.wetrakr_comment_id: WeTrakr's

@@ -341,6 +341,7 @@ export interface AdminUser {
 
 export interface GlobalSettings {
   tmdb_api_key: string | null;
+  mdblist_api_key: string | null;
   tvdb_api_key: string | null;
   tvdb_subscriber_pin: string | null;
   radarr_url: string | null;
@@ -508,6 +509,7 @@ export interface UserSettings {
   // MDBList
   mdblist_api_key: string | null;
   mdblist_connected: boolean;
+  has_global_mdblist_key: boolean;
   mdblist_sync_watched: boolean;
   mdblist_sync_ratings: boolean;
   mdblist_sync_watchlist: boolean;
