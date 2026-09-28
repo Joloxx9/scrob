@@ -1201,6 +1201,33 @@ export interface TraktCommentsResponse {
   trakt_url?: string;
 }
 
+export interface CalendarEntry {
+  air_date: string;
+  show_tmdb_id?: number | null;
+  show_tvdb_id?: number | null;
+  show_title: string;
+  poster_path: string | null;
+  season_number: number | null;
+  episode_number: number | null;
+  episode_name: string | null;
+  collected: boolean;
+  watched: boolean;
+}
+
+export interface CalendarPayload {
+  schema?: number;
+  generated_at?: string;
+  today: string;
+  shows_checked?: number;
+  entries: CalendarEntry[];
+}
+
+export interface CalendarResponse {
+  computed_at: string | null;
+  cached: boolean;
+  calendar: CalendarPayload;
+}
+
 // API calls
 export const api = {
   auth: {
@@ -1613,6 +1640,13 @@ export const api = {
   traktComments: {
     list: (params: { media_type: "movie" | "show"; tmdb_id?: number; tvdb_id?: number; season_number?: number; episode_number?: number }, token?: string) =>
       get<TraktCommentsResponse>("/trakt/comments", params, token),
+  },
+
+  calendar: {
+    get: (token?: string, cachedOnly?: boolean) =>
+      get<CalendarResponse>("/calendar", cachedOnly ? { cached_only: true } : undefined, token),
+    refresh: (token?: string) =>
+      post<CalendarResponse>("/calendar/refresh", undefined, token),
   },
 
   admin: {
