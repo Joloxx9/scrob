@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException
@@ -367,6 +368,150 @@ async def import_tmdb_list(
                 continue
             db.add(ListItem(list_id=lst.id, media_id=media.id))
             existing_media_ids.add(media.id)
+
+    await db.commit()
+
+    result = await db.execute(
+        select(ListModel)
+        .options(selectinload(ListModel.items).selectinload(ListItem.media).selectinload(Media.show))
+        .where(ListModel.id == lst.id)
+    )
+    return _format_list(result.scalar_one())
+
+
+class TvdbListImport(BaseModel):
+    list_id_or_url: str
+
+
+def _parse_tvdb_list_ref(raw: str) -> Optional[str]:
+    """A bare numeric TVDB list id, OR the slug TVDB uses instead for
+    "official" lists (thetvdb.com/lists/marvel-cinematic-universe has no
+    numeric id anywhere in its own URL - user-created lists get a plain
+    numeric id instead, but official ones don't). Accepts either form bare,
+    or a full thetvdb.com/lists/{ref} URL. Always returned as a string; the
+    caller checks .isdigit() to decide whether it still needs to resolve a
+    slug to an id via TVDB's own lookup."""
+    raw = raw.strip()
+    m = re.search(r"/lists/([^/?#\s]+)", raw)
+    ref = m.group(1) if m else raw
+    if not ref or " " in ref:
+        return None
+    return ref
+
+
+# Same reasoning as _TMDB_LIST_IMPORT_MAX_PAGES, but counting entities
+# directly (TVDB's list-extended call isn't paginated - one request returns
+# every entity). Kept lower than TMDB's cap since each entity here costs an
+# *additional* TVDB call to resolve its TMDB cross-id.
+_TVDB_LIST_IMPORT_MAX_ENTITIES = 300
+_TVDB_LIST_IMPORT_CONCURRENCY = 8
+
+
+@router.post("/import/tvdb", status_code=201)
+async def import_tvdb_list(
+    body: TvdbListImport,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    list_ref = _parse_tvdb_list_ref(body.list_id_or_url)
+    if list_ref is None:
+        raise HTTPException(status_code=400, detail="Could not find a TVDB list ID in that input")
+
+    from routers.shows import get_user_tvdb_key
+    from routers.media import get_user_tmdb_key
+    from routers.trakt import _get_or_create_movie_media, _get_or_create_series_media
+    from core import tvdb as tvdb_client
+
+    tvdb_key = await get_user_tvdb_key(db, current_user.id)
+    if not tvdb_key:
+        raise HTTPException(status_code=400, detail="TVDB API key required")
+    tmdb_key = await get_user_tmdb_key(db, current_user.id)
+    if not tmdb_key:
+        # Every entity is resolved through TMDB (see the module-level note on
+        # _get_or_create_movie_media/_get_or_create_series_media) - a TVDB
+        # key alone can find the list but not import anything from it.
+        raise HTTPException(status_code=400, detail="TMDB API key also required to resolve TVDB list items")
+
+    if list_ref.isdigit():
+        tvdb_list_id = int(list_ref)
+    else:
+        try:
+            tvdb_list_id = await tvdb_client.get_list_id_by_slug(list_ref, tvdb_key)
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"TVDB list not found: {e}")
+        if tvdb_list_id is None:
+            raise HTTPException(status_code=404, detail="TVDB list not found")
+
+    try:
+        list_data = await tvdb_client.get_list(tvdb_list_id, tvdb_key)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"TVDB list not found: {e}")
+
+    entities = (list_data.get("entities") or [])[:_TVDB_LIST_IMPORT_MAX_ENTITIES]
+
+    # Resolving each entity's TMDB cross-id is its own TVDB call - the part
+    # of this import that's genuinely "so many calls" (#442 follow-up) - so
+    # these run bounded-concurrently instead of one at a time, the same
+    # pattern backend/routers/calendar.py already uses for its own per-show
+    # TMDB fan-out.
+    sem = asyncio.Semaphore(_TVDB_LIST_IMPORT_CONCURRENCY)
+
+    async def _resolve(entity: dict) -> tuple[str, int, int | None] | None:
+        series_id = entity.get("seriesId")
+        movie_id = entity.get("movieId")
+        async with sem:
+            try:
+                if series_id:
+                    return ("series", series_id, await tvdb_client.get_series_tmdb_cross_id(series_id, tvdb_key))
+                if movie_id:
+                    return ("movie", movie_id, await tvdb_client.get_movie_tmdb_cross_id(movie_id, tvdb_key))
+            except Exception as exc:
+                logger.warning("TVDB list %s: could not resolve entity %s: %s", tvdb_list_id, entity, exc)
+        return None
+
+    resolved = await asyncio.gather(*(_resolve(e) for e in entities))
+
+    existing_list_result = await db.execute(
+        select(ListModel).where(
+            ListModel.user_id == current_user.id,
+            ListModel.tvdb_list_id == tvdb_list_id,
+        )
+    )
+    lst = existing_list_result.scalar_one_or_none()
+    if not lst:
+        lst = ListModel(
+            user_id=current_user.id,
+            name=list_data.get("name") or f"TVDB List {tvdb_list_id}",
+            description=list_data.get("overview") or None,
+            tvdb_list_id=tvdb_list_id,
+        )
+        db.add(lst)
+        await db.flush()
+
+    existing_media_ids_result = await db.execute(
+        select(ListItem.media_id).where(ListItem.list_id == lst.id)
+    )
+    existing_media_ids = {row[0] for row in existing_media_ids_result}
+
+    for entry in resolved:
+        if not entry:
+            continue
+        kind, _tvdb_entity_id, tmdb_id = entry
+        if not tmdb_id:
+            continue  # no TMDB counterpart on file for this show/movie - skip it
+        try:
+            async with db.begin_nested():
+                if kind == "movie":
+                    media = await _get_or_create_movie_media(db, tmdb_id, f"TMDB {tmdb_id}", tmdb_key)
+                else:
+                    media = await _get_or_create_series_media(db, tmdb_id, f"TMDB {tmdb_id}", tmdb_key)
+        except Exception as exc:
+            logger.warning("Could not import TVDB list %s item tmdb_id=%s (%s): %s", tvdb_list_id, tmdb_id, kind, exc)
+            continue
+        if not media or media.id in existing_media_ids:
+            continue
+        db.add(ListItem(list_id=lst.id, media_id=media.id))
+        existing_media_ids.add(media.id)
 
     await db.commit()
 

@@ -7,10 +7,18 @@ export const prerender = false;
 const { token, user } = Astro.locals;
 Astro.response.headers.set("Cache-Control", "no-store");
 
-// "Import from TMDB" only makes sense for a logged-in owner (list creation
-// is inherently an authenticated action), so no anonymous fallback branch
-// is needed here unlike shows.astro/search.astro's public-browse pages.
-const hasTmdbKey = user && token ? !!(await api.auth.getSettings(token))?.has_effective_tmdb_key : false;
+// "Import from TMDB/TVDB" only makes sense for a logged-in owner (list
+// creation is inherently an authenticated action), so no anonymous fallback
+// branch is needed here unlike shows.astro/search.astro's public-browse
+// pages. TVDB list items still resolve through TMDB under the hood, but the
+// entry point (the list itself) needs a TVDB key regardless.
+let hasTmdbKey = false;
+let hasTvdbKey = false;
+if (user && token) {
+  const settings = await api.auth.getSettings(token);
+  hasTmdbKey = !!settings?.has_effective_tmdb_key;
+  hasTvdbKey = !!settings?.has_effective_tvdb_key;
+}
 
 let lists: UserList[] = [];
 let publicLists: PublicList[] = [];
@@ -70,13 +78,25 @@ try {
               {hasTmdbKey && (
                 <button
                   type="button"
-                  id="open-import-modal-btn"
-                  class="w-full flex items-center gap-2.5 px-3 py-2 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 active:opacity-70 rounded-lg transition cursor-pointer text-left"
+                  class="open-import-modal-btn w-full flex items-center gap-2.5 px-3 py-2 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 active:opacity-70 rounded-lg transition cursor-pointer text-left"
+                  data-provider="tmdb"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 shrink-0">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
                   </svg>
                   Import from TMDB
+                </button>
+              )}
+              {hasTvdbKey && (
+                <button
+                  type="button"
+                  class="open-import-modal-btn w-full flex items-center gap-2.5 px-3 py-2 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 active:opacity-70 rounded-lg transition cursor-pointer text-left"
+                  data-provider="tvdb"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 shrink-0">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  Import from TVDB
                 </button>
               )}
             </div>
@@ -169,20 +189,20 @@ try {
     </div>
     )}
 
-    <!-- Import from TMDB Modal -->
-    {user && hasTmdbKey && (
+    <!-- Import from TMDB/TVDB Modal - one shared modal, contents swapped by
+         provider (see openImportModal below) rather than duplicating it. -->
+    {user && (hasTmdbKey || hasTvdbKey) && (
     <div id="import-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
       <div id="import-modal-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
       <div class="relative bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md shadow-2xl">
-        <h2 class="text-xl font-black text-zinc-100 mb-2">Import from TMDB</h2>
-        <p class="text-sm text-zinc-500 mb-6">Paste a public TMDB list's URL or ID. Private lists can't be imported.</p>
+        <h2 id="import-modal-title" class="text-xl font-black text-zinc-100 mb-2">Import a List</h2>
+        <p id="import-modal-hint" class="text-sm text-zinc-500 mb-6"></p>
         <form id="import-form" class="space-y-4">
           <div>
-            <label for="tmdb-list-input" class="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2">TMDB List URL or ID</label>
+            <label id="import-modal-label" for="list-id-input" class="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2">List URL or ID</label>
             <input
               type="text"
-              id="tmdb-list-input"
-              placeholder="https://www.themoviedb.org/list/1-... or just 1"
+              id="list-id-input"
               required
               class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
             />
@@ -199,9 +219,9 @@ try {
             <button
               type="submit"
               id="import-submit-btn"
-              class="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all text-sm cursor-pointer disabled:opacity-50"
+              class="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all text-sm cursor-pointer disabled:opacity-50 inline-flex items-center justify-center gap-2"
             >
-              Import
+              <span id="import-submit-label" class="inline-flex items-center gap-2">Import</span>
             </button>
           </div>
         </form>
@@ -224,10 +244,18 @@ try {
           </button>
           {hasTmdbKey && (
             <button
-              id="empty-import-modal-btn"
-              class="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded-xl transition-all active:scale-95 cursor-pointer"
+              class="open-import-modal-btn px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded-xl transition-all active:scale-95 cursor-pointer"
+              data-provider="tmdb"
             >
               Import from TMDB
+            </button>
+          )}
+          {hasTvdbKey && (
+            <button
+              class="open-import-modal-btn px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded-xl transition-all active:scale-95 cursor-pointer"
+              data-provider="tvdb"
+            >
+              Import from TVDB
             </button>
           )}
         </div>
@@ -326,16 +354,46 @@ try {
     openModal();
   });
 
-  // Import from TMDB modal
+  // Import from TMDB/TVDB - one shared modal, contents swapped per provider.
+  const PROVIDERS = {
+    tmdb: {
+      title: 'Import from TMDB',
+      hint: "Paste a public TMDB list's URL or ID. Private lists can't be imported.",
+      label: 'TMDB List URL or ID',
+      placeholder: 'https://www.themoviedb.org/list/1-... or just 1',
+      endpoint: '/api/proxy/lists/import/tmdb',
+    },
+    tvdb: {
+      title: 'Import from TVDB',
+      hint: "Paste a TheTVDB list's URL or ID. Each item is matched through its TMDB link, so anything TVDB-only (no TMDB match) is skipped - this can take a little longer than a TMDB import.",
+      label: 'TVDB List URL or ID',
+      placeholder: 'https://www.thetvdb.com/lists/13131 or just 13131',
+      endpoint: '/api/proxy/lists/import/tvdb',
+    },
+  };
+  const SPINNER_SVG = '<svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>';
+
   const importModal = document.getElementById('import-modal');
   const importForm = document.getElementById('import-form');
   const importCancelBtn = document.getElementById('import-cancel-btn');
   const importError = document.getElementById('import-error');
   const importSubmitBtn = document.getElementById('import-submit-btn');
+  const importSubmitLabel = document.getElementById('import-submit-label');
+  const importModalTitle = document.getElementById('import-modal-title');
+  const importModalHint = document.getElementById('import-modal-hint');
+  const importModalLabel = document.getElementById('import-modal-label');
+  const listIdInput = document.getElementById('list-id-input');
 
-  function openImportModal() {
-    importModal?.classList.remove('hidden');
-    document.getElementById('tmdb-list-input')?.focus();
+  function openImportModal(provider) {
+    const cfg = PROVIDERS[provider];
+    if (!cfg || !importModal) return;
+    importModal.dataset.provider = provider;
+    importModalTitle.textContent = cfg.title;
+    importModalHint.textContent = cfg.hint;
+    importModalLabel.textContent = cfg.label;
+    listIdInput.placeholder = cfg.placeholder;
+    importModal.classList.remove('hidden');
+    listIdInput.focus();
   }
 
   function closeImportModal() {
@@ -344,25 +402,31 @@ try {
     importError?.classList.add('hidden');
   }
 
-  document.getElementById('open-import-modal-btn')?.addEventListener('click', () => {
-    newListMenu?.classList.add('hidden');
-    openImportModal();
+  document.querySelectorAll('.open-import-modal-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      newListMenu?.classList.add('hidden');
+      openImportModal(btn.dataset.provider);
+    });
   });
-  document.getElementById('empty-import-modal-btn')?.addEventListener('click', openImportModal);
   importCancelBtn?.addEventListener('click', closeImportModal);
   document.getElementById('import-modal-backdrop')?.addEventListener('click', closeImportModal);
 
   importForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const listIdOrUrl = document.getElementById('tmdb-list-input').value.trim();
-    if (!listIdOrUrl) return;
+    const listIdOrUrl = listIdInput.value.trim();
+    const provider = importModal?.dataset.provider;
+    const cfg = PROVIDERS[provider];
+    if (!listIdOrUrl || !cfg) return;
 
     importSubmitBtn.disabled = true;
-    importSubmitBtn.textContent = 'Importing...';
+    // TVDB resolves each item through its own extra API call (#442 follow-
+    // up), so this can take a few seconds on a bigger list - a spinner
+    // makes that wait feel like progress instead of a hang.
+    importSubmitLabel.innerHTML = `${SPINNER_SVG} Importing…`;
     importError.classList.add('hidden');
 
     try {
-      const res = await fetch(`/api/proxy/lists/import/tmdb`, {
+      const res = await fetch(cfg.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ list_id_or_url: listIdOrUrl }),
@@ -380,7 +444,7 @@ try {
       importError.textContent = err.message;
       importError.classList.remove('hidden');
       importSubmitBtn.disabled = false;
-      importSubmitBtn.textContent = 'Import';
+      importSubmitLabel.textContent = 'Import';
     }
   });
 

@@ -21,6 +21,8 @@ class List(Base):
     # imported from, so re-importing the same list adds only new items
     # instead of creating a duplicate local list (#442).
     tmdb_list_id : Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Same idea, for a list imported from TheTVDB (#442 follow-up).
+    tvdb_list_id : Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # WeTrakr's own numeric list id — links a local List to the remote one it
     # mirrors, set on either a pull (imported from) or a push (created on).
     # BigInteger for the same reason as Comment.wetrakr_comment_id: WeTrakr's

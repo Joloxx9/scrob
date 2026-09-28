@@ -226,6 +226,57 @@ async def search_series(query: str, api_key: str, cache_ttl: float | None = DEFA
     return results
 
 
+async def get_list(list_id: int, api_key: str, cache_ttl: float | None = DEFAULT_CACHE_TTL) -> dict:
+    """A TVDB list's details plus member entities (#442 follow-up) - GET
+    /lists/{id}/extended. Unlike TMDB's v4 lists this isn't paginated: every
+    entity comes back in one response, each as {order, seriesId, movieId}
+    with exactly one of the two ids set. There's no public/private concept
+    on TVDB lists - every list the API knows about is readable."""
+    data = await _get(f"/lists/{list_id}/extended", api_key, cache_ttl=cache_ttl)
+    return data.get("data") or {}
+
+
+async def get_list_id_by_slug(slug: str, api_key: str, cache_ttl: float | None = DEFAULT_CACHE_TTL) -> int | None:
+    """Resolve a TVDB list's slug to its numeric id - GET /lists/slug/{slug}.
+    "Official" TVDB lists (e.g. thetvdb.com/lists/marvel-cinematic-universe)
+    have no numeric id anywhere in their own URL, only a slug; user-created
+    lists get a plain numeric id instead, so an import needs to accept
+    either. This endpoint returns the list's base record only (no entities),
+    so the caller still needs a follow-up get_list(id) call for those."""
+    data = await _get(f"/lists/slug/{slug}", api_key, cache_ttl=cache_ttl)
+    return (data.get("data") or {}).get("id")
+
+
+def _extract_tmdb_id(remote_ids: list[dict] | None) -> int | None:
+    """The TMDB cross-reference from a TVDB series/movie's remoteIds array,
+    if TVDB has one on file - used to resolve a TVDB list entity through the
+    same TMDB-keyed media pipeline every other list import already uses,
+    since Scrob has no native "whole show/movie" identity for TVDB alone."""
+    for rid in remote_ids or []:
+        if "MOVIEDB" in (rid.get("sourceName") or "").upper():
+            try:
+                return int(rid.get("id"))
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+async def get_series_tmdb_cross_id(tvdb_id: int, api_key: str, cache_ttl: float | None = DEFAULT_CACHE_TTL) -> int | None:
+    """Just the cross-referenced TMDB id for a TVDB series, if any - the
+    light call a list import uses per entity, skipping the full episode
+    list/translations get_series() fetches for the show detail page."""
+    data = await _get(f"/series/{tvdb_id}/extended", api_key, cache_ttl=cache_ttl)
+    return _extract_tmdb_id((data.get("data") or {}).get("remoteIds"))
+
+
+async def get_movie_tmdb_cross_id(tvdb_id: int, api_key: str, cache_ttl: float | None = DEFAULT_CACHE_TTL) -> int | None:
+    """Same as get_series_tmdb_cross_id, for a TVDB movie id - core.tvdb has
+    no broader movie support (Scrob's TVDB integration is shows-only), this
+    exists solely to resolve a list entity's movieId to a TMDB id."""
+    data = await _get(f"/movies/{tvdb_id}/extended", api_key, cache_ttl=cache_ttl)
+    return _extract_tmdb_id((data.get("data") or {}).get("remoteIds"))
+
+
 async def get_series(tvdb_id: int, api_key: str, cache_ttl: float | None = DEFAULT_CACHE_TTL) -> dict:
     """Fetch series extended info including episodes for accurate per-season counts."""
     data = await _get(
