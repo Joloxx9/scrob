@@ -38,6 +38,7 @@ from routers.webhooks import (
     mark_pushed_watched,
     parse_jellyfin_payload,
     parse_kodi_payload,
+    parse_plex_payload,
 )
 
 
@@ -292,6 +293,57 @@ class GetOrOpenSessionTests(IsolatedAsyncioTestCase):
 
         with self.assertRaises(IntegrityError):
             await _get_or_open_session(db, "jellyfin:1:abc", "jellyfin", 1, 2)
+
+
+class ParsePlexPayloadGrandparentGuidTests(unittest.TestCase):
+    """Regression coverage for #440's calendar investigation: grandparentGuid
+    parsing used its own stale inline regex instead of core.plex's
+    extract_tmdb_id/extract_tvdb_id/extract_imdb_id, so it never gained HAMA
+    agent support (com.plexapp.agents.hama://tvdb-73762/1/1) the way the
+    item's own guid extraction (just above it in parse_plex_payload) did.
+    For a HAMA-scanned show this meant the grandparent's real id silently
+    failed to resolve, forcing every such episode through a much weaker
+    title-only fallback - a real gap that made this class of misattribution
+    possible."""
+
+    @staticmethod
+    def _payload(grandparent_guid: str) -> dict:
+        return {
+            "event": "media.scrobble",
+            "Metadata": {
+                "type": "episode",
+                "title": "Episode 1",
+                "grandparentTitle": "Vigil",
+                "grandparentGuid": grandparent_guid,
+                "grandparentRatingKey": "999",
+                "parentIndex": 1,
+                "index": 1,
+                "ratingKey": "123",
+                "Guid": [],
+            },
+        }
+
+    def test_hama_grandparent_tmdb_id_is_extracted(self):
+        data = parse_plex_payload(self._payload("com.plexapp.agents.hama://tmdb-126167/1/1"))
+        self.assertEqual(data["grandparent_tmdb_id"], "126167")
+
+    def test_hama_grandparent_tvdb_id_is_extracted(self):
+        data = parse_plex_payload(self._payload("com.plexapp.agents.hama://tvdb-73762/1/1"))
+        self.assertEqual(data["grandparent_tvdb_id"], "73762")
+        self.assertIsNone(data["grandparent_tmdb_id"])
+
+    def test_legacy_and_plain_schemes_still_work(self):
+        data = parse_plex_payload(self._payload("com.plexapp.agents.themoviedb://126167?lang=en"))
+        self.assertEqual(data["grandparent_tmdb_id"], "126167")
+
+        data = parse_plex_payload(self._payload("tmdb://126167"))
+        self.assertEqual(data["grandparent_tmdb_id"], "126167")
+
+    def test_unresolvable_grandparent_guid_yields_no_ids(self):
+        data = parse_plex_payload(self._payload("plex://show/abc123"))
+        self.assertIsNone(data["grandparent_tmdb_id"])
+        self.assertIsNone(data["grandparent_tvdb_id"])
+        self.assertIsNone(data["grandparent_imdb_id"])
 
 
 class FindOrCreateMediaPlexRefreshTests(IsolatedAsyncioTestCase):

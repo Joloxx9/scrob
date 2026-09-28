@@ -1995,23 +1995,17 @@ def parse_plex_payload(payload: dict) -> dict | None:
     tvdb_id = plex_client.extract_tvdb_id(guids)
     imdb_id = plex_client.extract_imdb_id(guids)
 
-    # Extract series identifiers from grandparent
-    grandparent_guid = metadata.get("grandparentGuid", "")
-    grandparent_tmdb_id: Optional[str] = None
-    grandparent_tvdb_id: Optional[str] = None
-    grandparent_imdb_id: Optional[str] = None
-
-    # Try regex on grandparentGuid — handle both modern short forms (tmdb://, tvdb://)
-    # and legacy Plex agent forms (com.plexapp.agents.themoviedb://, thetvdb://)
-    tmdb_match = re.search(r'(?:^tmdb|themoviedb(?:\.com)?)://(\d+)', grandparent_guid, re.IGNORECASE)
-    if tmdb_match:
-        grandparent_tmdb_id = tmdb_match.group(1)
-    tvdb_match = re.search(r'(?:^tvdb|thetvdb(?:\.com)?)://(\d+)', grandparent_guid, re.IGNORECASE)
-    if tvdb_match:
-        grandparent_tvdb_id = tvdb_match.group(1)
-    imdb_match = re.search(r'imdb://(tt\d+)', grandparent_guid, re.IGNORECASE)
-    if imdb_match:
-        grandparent_imdb_id = imdb_match.group(1)
+    # Extract series identifiers from grandparent - same extract_* helpers as
+    # the item's own guids above, so a HAMA-agent show's grandparentGuid
+    # (e.g. "com.plexapp.agents.hama://tvdb-73762/1/1") resolves here too,
+    # instead of silently failing and falling through to a weaker title-only
+    # match (see #440's calendar investigation: an unresolved grandparent
+    # here is how an unrelated show's id ended up stamped on a new episode).
+    grandparent_guids = [{"id": metadata.get("grandparentGuid", "")}]
+    _grandparent_tmdb_id = plex_client.extract_tmdb_id(grandparent_guids)
+    grandparent_tmdb_id: Optional[str] = str(_grandparent_tmdb_id) if _grandparent_tmdb_id else None
+    grandparent_tvdb_id: Optional[str] = plex_client.extract_tvdb_id(grandparent_guids)
+    grandparent_imdb_id: Optional[str] = plex_client.extract_imdb_id(grandparent_guids)
 
     view_offset_ms = metadata.get("viewOffset", 0)
     duration_ms = metadata.get("duration", 0)
@@ -2483,38 +2477,22 @@ async def find_or_create_media_plex(
                 show_item = await plex_client.get_item(conn.url, conn.token, data["grandparent_rating_key"])
                 if show_item:
                     # get_guids() falls back to the lowercase 'guid' string a
-                    # legacy-agent show has instead of a Guid array, so an
-                    # older/manually-matched show can still resolve here.
+                    # legacy-agent show has instead of a Guid array, and
+                    # extract_tmdb_id/extract_tvdb_id understand the HAMA
+                    # agent's packed scheme too, so an older/manually-matched
+                    # or HAMA-scanned show can still resolve here.
                     show_guids = plex_client.get_guids(show_item)
-                    for g in show_guids:
-                        gid = g.get("id", "")
-                        if gid.startswith("tmdb://"):
-                            try:
-                                series_tmdb_id = int(gid.replace("tmdb://", ""))
-                            except ValueError:
-                                pass
-                            break
-                        elif re.search(r'themoviedb(?:\.com)?://(\d+)', gid, re.IGNORECASE):
-                            m = re.search(r'themoviedb(?:\.com)?://(\d+)', gid, re.IGNORECASE)
-                            if m:
-                                try:
-                                    series_tmdb_id = int(m.group(1))
-                                except ValueError:
-                                    pass
-                            break
-                    # Also try TVDB/IMDB on the show if TMDB still not found
+                    series_tmdb_id = plex_client.extract_tmdb_id(show_guids)
+                    # Also try TVDB on the show if TMDB still not found
                     if not series_tmdb_id:
-                        for g in show_guids:
-                            gid = g.get("id", "")
-                            tvdb_m = re.search(r'(?:^tvdb|thetvdb(?:\.com)?)://(\d+)', gid, re.IGNORECASE)
-                            if tvdb_m:
-                                try:
-                                    res = await tmdb.find_by_external_id(tvdb_m.group(1), "tvdb_id", api_key=api_key)
-                                    if res.get("tv_results"):
-                                        series_tmdb_id = res["tv_results"][0]["id"]
-                                        break
-                                except Exception:
-                                    pass
+                        show_tvdb_id = plex_client.extract_tvdb_id(show_guids)
+                        if show_tvdb_id:
+                            try:
+                                res = await tmdb.find_by_external_id(show_tvdb_id, "tvdb_id", api_key=api_key)
+                                if res.get("tv_results"):
+                                    series_tmdb_id = res["tv_results"][0]["id"]
+                            except Exception:
+                                pass
             except Exception:
                 pass
 
@@ -2896,16 +2874,14 @@ async def _handle_plex_webhook(request: Request, db: AsyncSession, api_key: str,
                         "grandparent_imdb_id": None,
                         "quality": item_quality,
                     }
-                    gp_guid = plex_item.get("grandparentGuid", "")
-                    m = re.search(r'(?:^tmdb|themoviedb(?:\.com)?)://(\d+)', gp_guid, re.IGNORECASE)
-                    if m:
-                        item_data["grandparent_tmdb_id"] = m.group(1)
-                    m = re.search(r'(?:^tvdb|thetvdb(?:\.com)?)://(\d+)', gp_guid, re.IGNORECASE)
-                    if m:
-                        item_data["grandparent_tvdb_id"] = m.group(1)
-                    m = re.search(r'imdb://(tt\d+)', gp_guid, re.IGNORECASE)
-                    if m:
-                        item_data["grandparent_imdb_id"] = m.group(1)
+                    # Same extract_* helpers as item_guids above (not raw
+                    # regex) so a HAMA-agent show's grandparentGuid resolves
+                    # here too - see the matching comment in parse_plex_payload.
+                    grandparent_guids = [{"id": plex_item.get("grandparentGuid", "")}]
+                    _gp_tmdb_id = plex_client.extract_tmdb_id(grandparent_guids)
+                    item_data["grandparent_tmdb_id"] = str(_gp_tmdb_id) if _gp_tmdb_id else None
+                    item_data["grandparent_tvdb_id"] = plex_client.extract_tvdb_id(grandparent_guids)
+                    item_data["grandparent_imdb_id"] = plex_client.extract_imdb_id(grandparent_guids)
 
                     try:
                         item_media = await find_or_create_media_plex(
