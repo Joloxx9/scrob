@@ -1439,7 +1439,7 @@ from core.identity import find_media, find_show, link_show_ids
 from datetime import datetime
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm.attributes import flag_modified
 
 
@@ -2356,6 +2356,53 @@ async def delete_single_event(
         await _push_watch_state(db, current_user.id, [media_id], watched=False)
 
     return {"status": "ok"}
+
+
+class BulkDeleteEventsRequest(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=1000)
+
+
+@router.post("/events/delete")
+async def delete_events_bulk(
+    body: BulkDeleteEventsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    """Delete many watch events at once (history multi-select). Ids that
+    don't exist or belong to someone else are ignored, not errors."""
+    ids = list(set(body.ids))
+    result = await db.execute(
+        select(WatchEvent.media_id).where(
+            WatchEvent.id.in_(ids),
+            WatchEvent.user_id == current_user.id,
+        )
+    )
+    affected_media_ids = set(result.scalars().all())
+
+    deleted = await db.execute(
+        delete(WatchEvent).where(
+            WatchEvent.id.in_(ids),
+            WatchEvent.user_id == current_user.id,
+        )
+    )
+    await db.commit()
+
+    # Same rule as the single delete: only push "unwatched" for media that
+    # has no plays left at all.
+    still_watched = set()
+    if affected_media_ids:
+        remaining = await db.execute(
+            select(WatchEvent.media_id).where(
+                WatchEvent.user_id == current_user.id,
+                WatchEvent.media_id.in_(affected_media_ids),
+            ).distinct()
+        )
+        still_watched = set(remaining.scalars().all())
+    fully_unwatched = list(affected_media_ids - still_watched)
+    if fully_unwatched:
+        await _push_watch_state(db, current_user.id, fully_unwatched, watched=False)
+
+    return {"status": "ok", "deleted": deleted.rowcount}
 
 
 @router.delete("")
