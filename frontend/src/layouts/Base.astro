@@ -171,7 +171,7 @@ const bottomNavItem = (active: boolean) =>
 </head>
 <body class="bg-zinc-950 text-zinc-100 min-h-screen overflow-x-hidden">
   {!hideNav && (
-    <nav class="px-4 md:px-6 py-3 md:py-4 text-sm relative z-30 bg-zinc-950 md:bg-transparent">
+    <nav class="px-4 md:px-6 py-3 md:py-4 text-sm sticky top-0 z-30 bg-zinc-950">
       <!-- Default bar -->
       <div id="nav-default" class="flex items-center justify-between gap-3 safe-area-top">
         <!-- Left: logo + desktop links -->
@@ -627,6 +627,18 @@ const bottomNavItem = (active: boolean) =>
         input.value = value;
       });
     });
+
+    // ── Sticky nav height ──────────────────────────────────────────────────────
+    // The top nav stays pinned, so anything else that sticks or scrolls to the top of
+    // the page has to clear it. Exposed as --nav-h (kept current as the nav changes
+    // height, e.g. when the mobile search bar swaps in).
+    const stickyNav = document.querySelector('nav.sticky');
+    if (stickyNav) {
+      const syncNavHeight = () =>
+        document.documentElement.style.setProperty('--nav-h', `${stickyNav.getBoundingClientRect().height}px`);
+      syncNavHeight();
+      new ResizeObserver(syncNavHeight).observe(stickyNav);
+    }
 
     // ── Mobile search expand ───────────────────────────────────────────────────
     const navDefault = document.getElementById('nav-default');

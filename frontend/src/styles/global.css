@@ -119,6 +119,8 @@ html.light {
 html {
   /* Fill notch/rounded-corner areas */
   background-color: var(--color-bg-page);
+  /* Anchor/scrollIntoView targets land below the pinned top nav. */
+  scroll-padding-top: var(--nav-h, 0px);
 }
 
 body {
@@ -167,7 +169,9 @@ select[class] {
 
 .sticky-top-safe {
   position: sticky;
-  top: env(safe-area-inset-top);
+  /* --nav-h is the pinned top nav's height (set in Base.astro); it already
+     includes the safe-area inset, so it replaces it rather than adding to it. */
+  top: var(--nav-h, env(safe-area-inset-top));
 }
 
 /* ── Mobile input improvements ─────────────────────────────────────────────
