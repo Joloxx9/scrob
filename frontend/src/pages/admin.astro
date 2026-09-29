@@ -519,7 +519,7 @@ const adminCount = users.filter((u: AdminUser) => u.is_admin).length;
                           </button>
                         </div>
                       </div>
-                      <div class="flex flex-wrap gap-2 md:hidden">
+                      <div class="flex flex-wrap justify-end gap-2 md:hidden">
                         <button type="button" class="user-actions-btn inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-all active:scale-95 cursor-pointer" aria-haspopup="menu" aria-expanded="false">
                         Actions
                         <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
@@ -694,11 +694,12 @@ const adminCount = users.filter((u: AdminUser) => u.is_admin).length;
 </div>
 
 <!-- User actions dropdown (shared by every row, positioned next to the clicked button) -->
-<div id="user-actions-menu" role="menu" class="hidden fixed z-50 flex-col bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl py-1">
-  <button type="button" role="menuitem" id="menu-toggle-admin" class="w-full text-left px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"></button>
-  <button type="button" role="menuitem" id="menu-reset-password" class="w-full text-left px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 cursor-pointer">Reset Password</button>
-  <button type="button" role="menuitem" id="menu-disable-2fa" class="hidden w-full text-left px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 cursor-pointer">Disable 2FA</button>
-  <button type="button" role="menuitem" id="menu-delete-user" class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-zinc-800 cursor-pointer">Delete</button>
+<div id="user-actions-menu" role="menu" class="hidden fixed z-50 flex-col bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-2 text-sm">
+  <button type="button" role="menuitem" id="menu-toggle-admin" class="w-full text-left px-3 py-2 rounded-lg transition active:opacity-70 cursor-pointer text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"></button>
+  <button type="button" role="menuitem" id="menu-reset-password" class="w-full text-left px-3 py-2 rounded-lg transition active:opacity-70 cursor-pointer text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800">Reset Password</button>
+  <button type="button" role="menuitem" id="menu-disable-2fa" class="hidden w-full text-left px-3 py-2 rounded-lg transition active:opacity-70 cursor-pointer text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800">Disable 2FA</button>
+  <div class="h-px bg-zinc-800 my-1 mx-1"></div>
+  <button type="button" role="menuitem" id="menu-delete-user" class="w-full text-left px-3 py-2 rounded-lg transition active:opacity-70 cursor-pointer text-red-400 hover:text-red-300 hover:bg-zinc-800">Delete</button>
 </div>
 
 <!-- Reset Password Modal -->
@@ -1617,11 +1618,8 @@ const adminCount = users.filter((u: AdminUser) => u.is_admin).length;
     };
     const mw = actionsMenu.offsetWidth;
     const mh = actionsMenu.offsetHeight;
-    // The mobile button (in the expanded detail row) sits at the row's left, so the menu
-    // opens rightward from its left edge; the desktop one sits at the row's right, so
-    // the menu's right edge lines up with it. Decided by where the button lives, not by
-    // whether a right-aligned menu happens to fit.
-    const preferred = btn.closest('tr.user-detail-row') ? r.left : r.right - mw;
+    // The button is at the row's right on both layouts, so the menu's right edge lines up with it.
+    const preferred = r.right - mw;
     const left = Math.max(8, Math.min(preferred, window.innerWidth - mw - 8));
     const top = r.bottom + 4 + mh > window.innerHeight ? Math.max(8, r.top - mh - 4) : r.bottom + 4;
     actionsMenu.style.left = `${left}px`;
