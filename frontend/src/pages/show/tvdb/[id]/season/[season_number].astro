@@ -162,6 +162,7 @@ const seasonTitle = season
                   showTmdbId={season.show.tmdb_id ?? undefined}
                   episodeOrder="tvdb"
                   tvdbId={Number(id)}
+                  tvdbOnly={!season.show.tmdb_id}
                   requestEnabled={false}
                   hideLists={false}
                   userRating={season.season_user_rating}

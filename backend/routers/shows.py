@@ -48,7 +48,7 @@ from core.enrichment import (
     apply_media_change_safely,
     is_unmapped_tvdb_episode,
 )
-from core.identity import link_show_ids
+from core.identity import find_media, link_show_ids
 from core.rewatch import (
     capped_season_episode_counts,
     total_aired_episodes,
@@ -2430,20 +2430,15 @@ async def get_tvdb_show(
             if episode.id in watched_ids:
                 watched_positions.setdefault(target_season, set()).add(target_episode)
 
-        if series_tmdb_id:
-            show_media_result = await db.execute(
-                select(Media).where(
-                    Media.tmdb_id == series_tmdb_id,
-                    Media.media_type == MediaType.series,
-                )
-            )
-            show_media = show_media_result.scalar_one_or_none()
+        if series_tmdb_id or tvdb_id:
+            # A TVDB-only show's series row has no tmdb_id, only its tvdb_id.
+            show_media = await find_media(db, MediaType.series, tmdb_id=series_tmdb_id, tvdb_id=tvdb_id)
             if show_media:
                 rating_result = await db.execute(
                     select(Rating.season_number, Rating.rating).where(
                         Rating.user_id == effective_user_id,
                         Rating.media_id == show_media.id,
-                        Rating.episode_order == "tvdb",
+                        Rating.episode_order.in_(("tvdb:official", "tvdb")),  # "tvdb" = pre-#174 spelling
                         Rating.season_number.isnot(None),
                     )
                 )
@@ -2467,6 +2462,22 @@ async def get_tvdb_show(
         season["season_number"]: season.get("episode_count", 0)
         for season in show_data["seasons"]
     }
+    # Count aired episodes only (like the TMDB show page), so a season with
+    # future episodes can still reach 100%. Best effort: the episode list is
+    # cached, and a failed fetch just keeps the full episode_count.
+    try:
+        _today_str = date.today().isoformat()
+        _aired_by_season: dict[int, int] = {}
+        for _raw_ep in await tvdb_client.get_series_episodes(tvdb_id, None, api_key, language=tvdb_lang):
+            _aired = _raw_ep.get("aired")
+            if _aired and _aired <= _today_str:
+                _sn = _raw_ep.get("seasonNumber")
+                _aired_by_season[_sn] = _aired_by_season.get(_sn, 0) + 1
+        for _sn, _count in _aired_by_season.items():
+            if _sn in season_ep_counts:
+                season_ep_counts[_sn] = _count
+    except Exception:
+        pass
     for season_number_value in set(
         list(season_ep_counts)
         + list(collected_positions)
@@ -2571,6 +2582,35 @@ async def get_tvdb_show(
         show_state: dict = {"tmdb_id": series_tmdb_id, "type": "series"}
         await enrich_with_state(db, effective_user_id, [show_state])
         in_lists = show_state.get("in_lists", [])
+    else:
+        # enrich_with_state is tmdb-keyed; a TVDB-only show's series row is
+        # found by tvdb_id instead.
+        series_media = await find_media(db, MediaType.series, tvdb_id=tvdb_id)
+        if series_media:
+            in_lists_result = await db.execute(
+                select(ListItem.list_id)
+                .join(UserList, UserList.id == ListItem.list_id)
+                .where(
+                    ListItem.media_id == series_media.id,
+                    ListItem.season_number.is_(None),
+                    UserList.user_id == effective_user_id,
+                )
+            )
+            in_lists = [r[0] for r in in_lists_result.all()]
+
+    # Whole-show rating (season_number NULL); stored against the series row,
+    # which for a TVDB-only show is found by tvdb_id.
+    show_user_rating = None
+    rated_media = await find_media(db, MediaType.series, tmdb_id=series_tmdb_id, tvdb_id=tvdb_id)
+    if rated_media:
+        show_rating_result = await db.execute(
+            select(Rating.rating).where(
+                Rating.user_id == effective_user_id,
+                Rating.media_id == rated_media.id,
+                Rating.season_number.is_(None),
+            )
+        )
+        show_user_rating = show_rating_result.scalar_one_or_none()
 
     return {
         **show_data,
@@ -2594,7 +2634,7 @@ async def get_tvdb_show(
         "is_monitored": is_monitored,
         "request_enabled": request_enabled,
         "request_status": None,
-        "user_rating": None,
+        "user_rating": show_user_rating,
         "season_states": season_states,
         "seasons": {},
         "seasons_meta": show_data["seasons"],
@@ -2850,21 +2890,16 @@ async def get_tvdb_season(
 
     season_user_rating = None
     season_in_lists: list[int] = []
-    if series_tmdb_id:
-        show_media_result = await db.execute(
-            select(Media).where(
-                Media.tmdb_id == series_tmdb_id,
-                Media.media_type == MediaType.series,
-            )
-        )
-        show_media = show_media_result.scalar_one_or_none()
+    if series_tmdb_id or tvdb_id:
+        # A TVDB-only show's series row has no tmdb_id, only its tvdb_id.
+        show_media = await find_media(db, MediaType.series, tmdb_id=series_tmdb_id, tvdb_id=tvdb_id)
         if show_media:
             season_rating_result = await db.execute(
                 select(Rating.rating).where(
                     Rating.user_id == effective_user_id,
                     Rating.media_id == show_media.id,
                     Rating.season_number == season_number,
-                    Rating.episode_order == "tvdb",
+                    Rating.episode_order.in_(("tvdb:official", "tvdb")),  # "tvdb" = pre-#174 spelling
                 )
             )
             season_user_rating = season_rating_result.scalar_one_or_none()
@@ -2924,7 +2959,11 @@ async def get_tvdb_season(
             "in_lists": tvdb_episode_in_lists.get(local_episode.id, []) if local_episode else [],
         })
 
-    total_eps = len(eps)
+    # Percentages count aired episodes only, like the TMDB season endpoint - a
+    # season with a few future episodes must still be able to reach 100%.
+    today_str = date.today().isoformat()
+    aired_eps = sum(1 for e in eps if e.get("air_date") and e["air_date"] <= today_str)
+    total_eps = aired_eps if aired_eps > 0 else len(eps)
     season_in_library = bool(collected_ep_ids)
     season_collection_pct = min(100, int((len(collected_ep_ids) / total_eps) * 100)) if total_eps else 0
     season_watched = total_eps > 0 and len(watched_ep_ids) >= total_eps

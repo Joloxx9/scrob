@@ -175,6 +175,7 @@ const posterPath = show
               <div class="mb-6">
                 <ActionBar
                   tmdbId={show.tmdb_id_cross ?? show.tvdb_id}
+                  tvdbOnly={!show.tmdb_id_cross}
                   mediaType="series"
                   watched={show.watched}
                   inLists={show.in_lists}
@@ -330,6 +331,7 @@ const posterPath = show
                       showTmdbId={show!.tmdb_id_cross ?? undefined}
                       episodeOrder="tvdb"
                       tvdbId={show!.tvdb_id}
+                      tvdbOnly={!show!.tmdb_id_cross}
                       hideRequest={true}
                       hideLists={false}
                       userRating={seasonState.user_rating ?? null}

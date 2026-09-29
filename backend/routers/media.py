@@ -3807,7 +3807,8 @@ async def uncollect_season(
 
 @router.get("/request-status")
 async def get_request_status(
-    tmdb_id: int = Query(...),
+    tmdb_id: int | None = Query(None),
+    tvdb_id: int | None = Query(None),
     media_type: MediaType = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_or_api_key),
@@ -3818,6 +3819,14 @@ async def get_request_status(
     gs = await _get_global_settings(db)
 
     monitored = False
+
+    # A TheTVDB-only show has no TMDB id at all, so its own tvdb_id must be
+    # passed as tvdb_id - never as tmdb_id, which would resolve to a
+    # different show.
+    if media_type == MediaType.movie and tmdb_id is None:
+        raise HTTPException(status_code=422, detail="tmdb_id is required for movies")
+    if media_type == MediaType.series and tmdb_id is None and tvdb_id is None:
+        raise HTTPException(status_code=422, detail="tmdb_id or tvdb_id is required")
 
     try:
         if media_type == MediaType.movie:
@@ -3840,11 +3849,11 @@ async def get_request_status(
             sonarr_cfg = _effective_sonarr(settings, gs)
             if not sonarr_cfg:
                 raise HTTPException(status_code=503, detail="Sonarr not configured")
-            tvdb_id: int | None = None
-            show_q = await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))
-            show_row = show_q.scalar_one_or_none()
-            if show_row and show_row.tmdb_data:
-                tvdb_id = (show_row.tmdb_data.get("external_ids") or {}).get("tvdb_id")
+            if not tvdb_id:
+                show_q = await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))
+                show_row = show_q.scalar_one_or_none()
+                if show_row and show_row.tmdb_data:
+                    tvdb_id = (show_row.tmdb_data.get("external_ids") or {}).get("tvdb_id")
             if not tvdb_id:
                 from core import tmdb as tmdb_core
                 tmdb_key = await get_user_tmdb_key(db, current_user.id)
@@ -3952,6 +3961,51 @@ def _resolve_add_overrides(overrides: RequestOverrides | None, is_admin: bool) -
     out as its own function so this rule is unit-testable without a full
     request/DB round-trip."""
     return overrides if (overrides and is_admin) else None
+
+
+@router.post("/series/tvdb/{tvdb_id}/request")
+async def request_series_by_tvdb(
+    tvdb_id: int,
+    overrides: RequestOverrides | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Add a TheTVDB-only series (no TMDB counterpart) to Sonarr by its own
+    TVDB id. The admin-approval queue is keyed by tmdb_id, so a request that
+    would need approval can't be filed for these shows."""
+    settings_q = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == current_user.id)
+    )
+    settings = settings_q.scalar_one_or_none()
+    gs = await _get_global_settings(db)
+
+    sonarr_cfg = _effective_sonarr(settings, gs)
+    if not sonarr_cfg:
+        raise HTTPException(status_code=400, detail="Sonarr not configured in settings")
+
+    uses_global = gs and sonarr_cfg is gs and not current_user.is_admin
+    if uses_global and gs.sonarr_require_approval:
+        raise HTTPException(
+            status_code=400,
+            detail="Requests that need admin approval aren't supported for TheTVDB-only shows",
+        )
+
+    ov = _resolve_add_overrides(overrides, current_user.is_admin)
+
+    from core import sonarr
+    try:
+        default_season_folder = sonarr_cfg.sonarr_season_folder if sonarr_cfg.sonarr_season_folder is not None else True
+        return await sonarr.add_series(
+            url=sonarr_cfg.sonarr_url,
+            token=sonarr_cfg.sonarr_token,
+            tvdb_id=tvdb_id,
+            root_folder=(ov.root_folder if ov and ov.root_folder is not None else sonarr_cfg.sonarr_root_folder),
+            quality_profile_id=(ov.quality_profile if ov and ov.quality_profile is not None else sonarr_cfg.sonarr_quality_profile),
+            tags=(ov.tags if ov and ov.tags is not None else sonarr_cfg.sonarr_tags),
+            season_folder=(ov.season_folder if ov and ov.season_folder is not None else default_season_folder),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sonarr error: {e}")
 
 
 @router.post("/{type}/{tmdb_id}/request")

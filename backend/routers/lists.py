@@ -19,8 +19,8 @@ from models.users import User
 from models.follows import Follow
 from models.global_settings import GlobalSettings
 from routers.media import enrich_with_state, require_anon_nav_allowed
-from core.enrichment import is_unmapped_tvdb_episode, create_media_safely
-from core.identity import find_media
+from core.enrichment import is_unmapped_tvdb_episode, create_media_safely, get_or_create_tvdb_series_media
+from core.identity import find_media, find_show
 from core.translations import (
     apply_media_translations,
     get_media_translations,
@@ -156,10 +156,9 @@ async def _attach_season_show_info(db: AsyncSession, media: dict) -> None:
     """Fill in show_title/show_poster_path/show_tvdb_id for a single season media
     dict - mirrors the batched version in get_list() for the single-item response
     add_list_item() returns."""
-    if media.get("season_number") is None or not media.get("tmdb_id"):
+    if media.get("season_number") is None or not (media.get("tmdb_id") or media.get("tvdb_id")):
         return
-    show_result = await db.execute(select(ShowModel).where(ShowModel.tmdb_id == media["tmdb_id"]))
-    show = show_result.scalar_one_or_none()
+    show = await find_show(db, tmdb_id=media.get("tmdb_id"), tvdb_id=media.get("tvdb_id"))
     if show:
         media["show_title"] = show.title
         media["show_poster_path"] = show.poster_path
@@ -836,17 +835,32 @@ async def get_list(
         if item["media"].get("type") in (MediaType.series, "series")
         and item["media"].get("tmdb_id")
     }
+    # TheTVDB-only series rows have no tmdb_id - matched by tvdb_id instead.
+    series_tvdb_only_ids = {
+        item["media"]["tvdb_id"]
+        for item in formatted_items
+        if item["media"].get("type") in (MediaType.series, "series")
+        and not item["media"].get("tmdb_id")
+        and item["media"].get("tvdb_id")
+    }
     show_map: dict = {}
+    show_by_tvdb: dict = {}
     if series_tmdb_ids:
         shows_result = await db.execute(
             select(ShowModel).where(ShowModel.tmdb_id.in_(series_tmdb_ids))
         )
         show_map = {s.tmdb_id: s for s in shows_result.scalars().all()}
+    if series_tvdb_only_ids:
+        tvdb_shows_result = await db.execute(
+            select(ShowModel).where(ShowModel.tvdb_id.in_(series_tvdb_only_ids))
+        )
+        show_by_tvdb = {s.tvdb_id: s for s in tvdb_shows_result.scalars().all()}
+    if show_map or show_by_tvdb:
         for item in formatted_items:
             m = item["media"]
             if m.get("type") not in (MediaType.series, "series"):
                 continue
-            show = show_map.get(m.get("tmdb_id"))
+            show = show_map.get(m.get("tmdb_id")) if m.get("tmdb_id") else show_by_tvdb.get(m.get("tvdb_id"))
             if not show:
                 continue
             if not m.get("poster_path") and show.poster_path:
@@ -1188,6 +1202,13 @@ async def add_list_item(
 
     api_key = await get_user_tmdb_key(db, current_user.id)
 
+    if not media and not body.tmdb_id and body.tvdb_id and body.media_type == MediaType.series:
+        # A TheTVDB-only show has no TMDB record to fetch; its series row is
+        # built from the local Show (created by its show page).
+        media = await get_or_create_tvdb_series_media(db, body.tvdb_id)
+        if media is None:
+            raise HTTPException(status_code=404, detail="Show not found locally; open its show page first so it can be created from TheTVDB")
+
     if not media and not body.tmdb_id:
         raise HTTPException(status_code=404, detail="Media not found")
     if not media:
@@ -1240,11 +1261,12 @@ async def add_list_item(
 
     if body.season_number is not None:
         season_show_tmdb_id = body.tmdb_id or media.tmdb_id
-        if not season_show_tmdb_id:
-            raise HTTPException(status_code=404, detail="Season not found")
-        try:
-            await tmdb.get_season(season_show_tmdb_id, body.season_number, api_key=api_key)
-        except Exception:
+        if season_show_tmdb_id:
+            try:
+                await tmdb.get_season(season_show_tmdb_id, body.season_number, api_key=api_key)
+            except Exception:
+                raise HTTPException(status_code=404, detail="Season not found")
+        elif not media.tvdb_id:
             raise HTTPException(status_code=404, detail="Season not found")
 
     season_key = func.coalesce(ListItem.season_number, -1)
