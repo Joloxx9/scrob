@@ -14,7 +14,10 @@ const token = Astro.cookies.get("token")?.value;
 
 let comments: TraktComment[] = [];
 let traktUrl: string | undefined;
-if (token && (tmdbId || tvdbId)) {
+// The user's settings are already on hand (middleware), so skip the request
+// altogether when community comments are off instead of asking the backend
+// to say "disabled" on every page load.
+if (token && Astro.locals.settings?.trakt_show_comments && (tmdbId || tvdbId)) {
   try {
     const res = await api.traktComments.list({
       media_type: mediaType,
