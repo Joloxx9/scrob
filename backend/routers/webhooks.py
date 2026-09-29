@@ -3226,6 +3226,9 @@ def parse_kodi_payload(payload: dict) -> dict | None:
         "is_paused": notification_type == "pause",
         "ended": ended,
         "session_id": str(item.get("id") or payload.get("session_id") or "0"),
+        # "library_update" = the add-on saw a library "mark as watched", not
+        # real playback (see _handle_kodi_webhook).
+        "library_update": payload.get("source") == "library_update",
     }
 
 
@@ -3483,6 +3486,20 @@ async def _handle_kodi_webhook(request: Request, db: AsyncSession, user: User):
         await db.commit()
 
     elif notification_type == "stop":
+        # A library mark-as-watched of something Scrob already has a play for
+        # adds nothing. Without this, Kodi echoing back a playcount Scrob just
+        # synced to it was recorded as a brand new play each time, and the
+        # growing count made the next sync write it to Kodi again, forever.
+        if data.get("library_update"):
+            already = await db.execute(
+                select(func.count()).select_from(WatchEvent).where(
+                    WatchEvent.user_id == user.id,
+                    WatchEvent.media_id == media.id,
+                )
+            )
+            if already.scalar_one() > 0:
+                return {"status": "ignored", "reason": "already watched", "title": data["title"]}
+
         session = await _close_session(db, session_key)
         progress_percent = data["progress_percent"] or (session.progress_percent if session else 0.0)
         progress_seconds = data["progress_seconds"] or (session.progress_seconds if session else 0)
