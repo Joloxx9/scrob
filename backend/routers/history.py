@@ -35,6 +35,7 @@ import core.plex as plex_client
 import core.jellyfin as jellyfin_client
 import core.emby as emby_client
 import core.trakt as trakt_client
+import core.tvdb as tvdb_client
 import core.nuvio as nuvio_client
 
 router = APIRouter()
@@ -1189,7 +1190,9 @@ async def get_next_up(
             # an episode number TMDB doesn't actually have, e.g. a provider
             # numbering mismatch) — they have no real metadata and would surface
             # a broken Next Up card that 404s when opened.
-            Media.tmdb_id.isnot(None),
+            # A TVDB-only episode carries its TVDB episode id instead of a
+            # TMDB one, and is just as real.
+            or_(Media.tmdb_id.isnot(None), Media.tvdb_id.isnot(None)),
             or_(*show_filters),
         )
         .order_by(Media.show_id, Media.season_number, Media.episode_number)
@@ -1266,7 +1269,7 @@ async def get_next_up(
 
             for show_id in missing_show_ids:
                 show = shows_by_id.get(show_id)
-                if not show or not show.tmdb_id:
+                if not show or not show.tmdb_id or _is_tvdb_canonical(show):
                     continue
                 fresh_show_data = fetched_by_show.get(show_id)
                 if fresh_show_data is not None:
@@ -1336,6 +1339,61 @@ async def get_next_up(
                 media.show = show
                 next_per_show[show_id] = media
             await db.commit()
+
+        # TVDB-canonical shows (no TMDB counterpart, or explicitly TVDB-numbered)
+        # get the same on-demand next-episode lookup from TheTVDB, using the
+        # season layout stored on the show. Needs only a TVDB key, so it runs
+        # whether or not the user has a TMDB one.
+        tvdb_show_result = await db.execute(
+            select(Show).where(Show.id.in_(missing_show_ids), Show.tvdb_id.isnot(None))
+        )
+        tvdb_shows = [s for s in tvdb_show_result.scalars().all() if _is_tvdb_canonical(s)]
+        if tvdb_shows:
+            from routers.shows import get_user_tvdb_key
+
+            tvdb_api_key = await get_user_tvdb_key(db, current_user.id)
+            if tvdb_api_key:
+                tvdb_lang = tvdb_client.tvdb_language(await get_user_metadata_language(db, current_user.id))
+                for show in tvdb_shows:
+                    season, episode = last_per_show[show.id]
+                    next_ep = _compute_next_episode((show.tmdb_data or {}).get("seasons", []), season, episode)
+                    if next_ep is None:
+                        continue
+                    try:
+                        raw_eps = await tvdb_client.get_series_episodes(
+                            show.tvdb_id, next_ep[0], tvdb_api_key, language=tvdb_lang
+                        )
+                    except Exception:
+                        continue
+                    tvdb_ep = next(
+                        (tvdb_client.format_episode(e) for e in raw_eps if e.get("number") == next_ep[1]),
+                        None,
+                    )
+                    if not tvdb_ep:
+                        continue
+                    media = Media(
+                        media_type=MediaType.episode,
+                        show_id=show.id,
+                        season_number=next_ep[0],
+                        episode_number=next_ep[1],
+                    )
+                    await enrich_episode_from_tvdb(media, tvdb_ep)
+                    try:
+                        async with db.begin_nested():
+                            db.add(media)
+                            await db.flush()
+                    except IntegrityError:
+                        existing_result = await db.execute(
+                            select(Media)
+                            .where(Media.tvdb_id == media.tvdb_id, Media.media_type == MediaType.episode)
+                            .order_by(Media.id)
+                        )
+                        media = existing_result.scalars().first()
+                        if not media:
+                            continue
+                    media.show = show
+                    next_per_show[show.id] = media
+                await db.commit()
 
     if not next_per_show:
         return {"next_up": []}

@@ -1789,10 +1789,9 @@ async def airing_today_collected(
         await require_anon_nav_allowed(db)
     effective_user_id = current_user.id if current_user else ANON_USER_ID
 
-    tmdb_key = await get_user_tmdb_key(db, effective_user_id)
-    if not check_tmdb_key(tmdb_key):
-        return {"results": []}
-
+    # No key gate here: compute_calendar schedules each show from whichever
+    # provider it belongs to (TMDB or TheTVDB) and returns no entries when the
+    # matching key is missing.
     from routers.calendar import (
         _background_compute,
         _is_cache_fresh,
@@ -1829,11 +1828,12 @@ async def airing_today_collected(
     results = [
         {
             "id": None,
-            "tmdb_id": e["show_tmdb_id"],
+            "tmdb_id": e.get("show_tmdb_id"),
             "type": "episode",
             "title": e.get("episode_name") or e.get("show_title"),
             "show_title": e.get("show_title"),
             "show_tmdb_id": e.get("show_tmdb_id"),
+            "show_tvdb_id": e.get("show_tvdb_id"),
             "season_number": e.get("season_number"),
             "episode_number": e.get("episode_number"),
             "poster_path": e.get("poster_path"),
