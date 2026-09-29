@@ -978,6 +978,7 @@ async def _run_wetrakr_push(user_id: int, job_id: int) -> None:
                     select(Comment).where(
                         Comment.user_id == user_id,
                         Comment.wetrakr_comment_id.is_(None),
+                        Comment.tmdb_id.isnot(None),
                         Comment.media_type.in_(["movie", "series"]),
                         Comment.season_number.is_(None),
                     )

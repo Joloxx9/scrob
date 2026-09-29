@@ -350,7 +350,8 @@ const posterPath = show
 
         <CommentsSection
           mediaType="series"
-          tmdbId={show.tmdb_id_cross ?? show.tvdb_id}
+          tmdbId={show.tmdb_id_cross}
+          tvdbId={show.tvdb_id}
         />
 
         <TraktCommentsSection

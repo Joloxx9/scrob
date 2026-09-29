@@ -58,7 +58,14 @@ function mediaUrl(type: string, tmdbId: number): string {
   return `/media/${type}/${tmdbId}`;
 }
 
-function commentUrl(item: { media_type: string; tmdb_id: number; season_number: number | null; episode_number: number | null }): string {
+function commentUrl(item: { media_type: string; tmdb_id: number | null; tvdb_id: number | null; season_number: number | null; episode_number: number | null }): string {
+  if (item.tvdb_id && !item.tmdb_id) {
+    const base = `/show/tvdb/${item.tvdb_id}`;
+    if (item.media_type === "season" && item.season_number != null) return `${base}/season/${item.season_number}`;
+    if (item.media_type === "episode" && item.season_number != null && item.episode_number != null)
+      return `${base}/season/${item.season_number}/${item.episode_number}`;
+    return base;
+  }
   if (item.media_type === "movie") return `/media/movie/${item.tmdb_id}`;
   if (item.media_type === "series") return `/show/${item.tmdb_id}`;
   if (item.media_type === "season" && item.season_number != null) return `/show/${item.tmdb_id}/season/${item.season_number}`;

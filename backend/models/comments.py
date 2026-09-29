@@ -8,6 +8,7 @@ class Comment(Base):
     __tablename__ = "comments"
     __table_args__ = (
         Index("idx_comments_media", "media_type", "tmdb_id", "season_number", "episode_number"),
+        Index("idx_comments_tvdb", "media_type", "tvdb_id", "season_number", "episode_number"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -15,7 +16,10 @@ class Comment(Base):
 
     # Generic entity referencing
     media_type: Mapped[str] = mapped_column(String(50), nullable=False) # 'movie', 'series', 'season', 'episode', 'person'
-    tmdb_id: Mapped[int] = mapped_column(Integer, nullable=False) # For season/episode this is the SHOW's tmdb_id
+    # Exactly one of tmdb_id/tvdb_id is set. For season/episode these are the SHOW's ids;
+    # tvdb_id is used only for TVDB-only shows that have no TMDB counterpart.
+    tmdb_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tvdb_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     season_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     episode_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 

@@ -287,7 +287,8 @@ const thumbnail = episode?.image_url || show?.poster_path || null;
 
         <CommentsSection
           mediaType="series"
-          tmdbId={episode.show_tmdb_id ?? episode.show.tmdb_id ?? Number(id)}
+          tmdbId={episode.show_tmdb_id ?? episode.show.tmdb_id}
+          tvdbId={Number(id)}
           seasonNumber={episode.tmdb_season_number}
           episodeNumber={episode.tmdb_episode_number}
         />
