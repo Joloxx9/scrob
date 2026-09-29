@@ -543,9 +543,14 @@ class AdminUser(BaseModel):
     api_key    : str
     created_at : datetime
     avatar_url : Optional[str] = None
+    totp_enabled : bool = False
 
     class Config:
         from_attributes = True
+
+
+class AdminPasswordReset(BaseModel):
+    password : str = Field(min_length=1)
 
 
 class AdminUserCreate(BaseModel):

@@ -141,6 +141,7 @@ async def list_users(
             api_key=u.api_key,
             created_at=u.created_at,
             avatar_url=f"/profile/avatar/{u.id}" if (p and p.avatar_path) else None,
+            totp_enabled=u.totp_enabled,
         )
         for u, p in result.all()
     ]
@@ -221,6 +222,54 @@ async def toggle_admin(
     await db.commit()
     await db.refresh(target)
     return target
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: int,
+    body: schemas.AdminPasswordReset,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Set a new password for any user - for instances without SMTP, where the
+    self-service forgot-password email flow isn't available (#445)."""
+    from core.security import get_password_hash
+    from models.password_reset import PasswordResetToken
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target.password_hash = get_password_hash(body.password)
+    # Any emailed reset link issued before this is now moot.
+    await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
+    await db.commit()
+    return {"status": "password reset"}
+
+
+@router.post("/users/{user_id}/disable-2fa")
+async def disable_user_2fa(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Turn off two-factor auth for a user who lost their authenticator and
+    backup codes. The user can set it up again from their own settings."""
+    from models.users import TotpBackupCode
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not target.totp_enabled:
+        raise HTTPException(status_code=400, detail="2FA is not enabled for this user")
+
+    target.totp_enabled = False
+    target.totp_secret = None
+    await db.execute(delete(TotpBackupCode).where(TotpBackupCode.user_id == user_id))
+    await db.commit()
+    return {"status": "2FA disabled"}
 
 
 @router.delete("/users/{user_id}")

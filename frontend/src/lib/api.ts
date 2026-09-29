@@ -337,6 +337,7 @@ export interface AdminUser {
   api_key: string;
   created_at: string;
   avatar_url: string | null;
+  totp_enabled?: boolean;
 }
 
 export interface GlobalSettings {
