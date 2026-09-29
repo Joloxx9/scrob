@@ -12,6 +12,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -64,7 +65,25 @@ async def simkl_pin_start(
 
     _require_simkl_config(settings)
 
-    data = await simkl_client.start_pin_auth(settings.simkl_client_id)
+    # Simkl answers a bad Client ID with an HTTP error or a 200 carrying
+    # result "KO" and no user_code; either used to escape as a bare 500.
+    try:
+        data = await simkl_client.start_pin_auth(settings.simkl_client_id)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Simkl PIN start rejected: HTTP %s", exc.response.status_code)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Simkl rejected the request (HTTP {exc.response.status_code}). Check that the Client ID is correct.",
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("Simkl PIN start failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach Simkl. Try again in a moment.")
+    if not isinstance(data, dict) or not data.get("user_code"):
+        message = data.get("message") if isinstance(data, dict) else None
+        raise HTTPException(
+            status_code=502,
+            detail=f"Simkl did not return a PIN{f': {message}' if message else ''}. Check that the Client ID is correct.",
+        )
 
     settings.simkl_device_code = data["user_code"]
     await db.commit()

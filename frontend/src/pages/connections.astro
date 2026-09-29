@@ -4388,6 +4388,17 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
       const connectBtn = document.getElementById('simkl-connect-btn');
       const disconnectBtn = document.getElementById('simkl-disconnect-btn');
 
+      // A server error can come back as plain text ("Internal Server Error"),
+      // which would make res.json() throw an unreadable JSON parse error.
+      const errorDetail = async (r: Response, fallback: string): Promise<string> => {
+        try {
+          const body = await r.json();
+          return body.detail || fallback;
+        } catch {
+          return `${fallback} (server error ${r.status})`;
+        }
+      };
+
       if (connectBtn) {
         connectBtn.onclick = async () => {
           connectBtn.disabled = true;
@@ -4403,8 +4414,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                 body: JSON.stringify({ simkl_client_id: clientId }),
               });
               if (!saveRes.ok) {
-                const err = await saveRes.json();
-                throw new Error(err.detail || 'Failed to save Simkl Client ID');
+                throw new Error(await errorDetail(saveRes, 'Failed to save Simkl Client ID'));
               }
             }
 
@@ -4413,8 +4423,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
               headers: { 'Authorization': `Bearer ${token}` },
             });
             if (!res.ok) {
-              const err = await res.json();
-              throw new Error(err.detail || 'Failed to start Simkl auth');
+              throw new Error(await errorDetail(res, 'Failed to start Simkl auth'));
             }
             const data = await res.json();
 
@@ -4449,8 +4458,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                     return;
                   }
                 } else {
-                  const err = await pollRes.json();
-                  if (statusEl) statusEl.textContent = `Error: ${err.detail || 'Authorization failed'}`;
+                  if (statusEl) statusEl.textContent = `Error: ${await errorDetail(pollRes, 'Authorization failed')}`;
                   connectBtn.disabled = false;
                   connectBtn.textContent = 'Connect Simkl';
                   return;
