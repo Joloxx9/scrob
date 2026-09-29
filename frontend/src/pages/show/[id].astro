@@ -7,6 +7,7 @@ import CommentsSection from "../../components/CommentsSection.astro";
 import TraktCommentsSection from "../../components/TraktCommentsSection.astro";
 import CastCrewSection from "../../components/CastCrewSection.astro";
 import EpisodeOrderSelector from "../../components/EpisodeOrderSelector.astro";
+import RatingHeatmap from "../../components/RatingHeatmap.astro";
 import { api, type Show } from "../../lib/api";
 import { countAiredRegularSeasons } from "../../lib/seasonCount";
 import { ratingPosterUrl } from "../../lib/posters";
@@ -43,6 +44,22 @@ const seasons = Object.entries(show?.seasons ?? {}).sort(
 const seasonCount = show?.seasons_meta?.length
   ? countAiredRegularSeasons(show.seasons_meta)
   : seasons.filter(([k]) => Number(k.replace("season_", "")) > 0).length;
+
+// Episode rating heat map: regular seasons only (Specials rarely carry
+// meaningful votes), and hidden entirely when TMDB has no episode votes.
+const heatmapSeasons = seasons
+  .map(([k, eps]) => ({ number: Number(k.replace("season_", "")), eps }))
+  .filter((s) => s.number > 0 && s.eps.length > 0)
+  .map((s) => ({
+    number: s.number,
+    episodes: s.eps.filter((e) => e.episode_number != null).map((e) => ({
+      number: e.episode_number as number,
+      rating: e.tmdb_rating,
+      title: e.title,
+      href: `/show/${show?.tmdb_id}/season/${s.number}/${e.episode_number}`,
+    })),
+  }));
+const hasHeatmapRatings = heatmapSeasons.some((s) => s.episodes.some((e) => e.rating && e.rating > 0));
 
 const year = show?.first_air_date?.slice(0, 4) ?? null;
 const rating = show?.tmdb_rating ? show.tmdb_rating.toFixed(1) : null;
@@ -281,10 +298,19 @@ const posterPath = show
           </div>
         </div>
 
+        {hasHeatmapRatings && (
+          <div class="mt-24">
+            <div class="flex items-center justify-between mb-10 border-b border-zinc-900 pb-6">
+              <h2 class="section-headline">Episode Ratings</h2>
+            </div>
+            <RatingHeatmap seasons={heatmapSeasons} />
+          </div>
+        )}
+
         <!-- Seasons -->
         <div class="mt-24">
           <div class="flex items-center justify-between mb-10 border-b border-zinc-900 pb-6">
-            <h2 class="text-3xl font-black text-zinc-100 tracking-tighter uppercase">Seasons</h2>
+            <h2 class="section-headline">Seasons</h2>
           </div>
           
           <div class="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] gap-8">
