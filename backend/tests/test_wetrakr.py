@@ -43,6 +43,21 @@ class PollDeviceTokenTests(unittest.IsolatedAsyncioTestCase):
         with _patched(handler):
             self.assertIsNone(await wetrakr.poll_device_token("dc"))
 
+    async def test_400_authorization_pending_is_pending(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(400, json={"error": "authorization_pending"})
+
+        with _patched(handler):
+            self.assertIsNone(await wetrakr.poll_device_token("dc"))
+
+    async def test_400_invalid_request_stops_polling(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(400, json={"error": "invalid_request"})
+
+        with _patched(handler):
+            with self.assertRaises(WeTrakrAuthError):
+                await wetrakr.poll_device_token("dc")
+
     async def test_429_is_treated_as_pending(self):
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(429, json={"error": "slow_down"})
@@ -134,6 +149,8 @@ class AddToWatchedBatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(show["seasons"][0]["number"], 1)
         self.assertEqual([e["number"] for e in show["seasons"][0]["episodes"]], [1, 2])
         self.assertTrue(all(e.get("tracked_at_unknown") for e in show["seasons"][0]["episodes"]))
+        # status is required on nested episodes too (WeTrakr 1.0.4+)
+        self.assertTrue(all(e.get("status") == "watched" for e in show["seasons"][0]["episodes"]))
 
     async def test_noop_when_nothing_to_push(self):
         called = {"count": 0}

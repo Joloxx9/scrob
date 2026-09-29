@@ -67,6 +67,26 @@ async def _get_all_pages(
         page += 1
 
 
+def _log_unresolved(label: str, resp: httpx.Response) -> None:
+    """The write endpoints answer 200 even when some items were refused: what
+    could not be resolved comes back under notFound, and what was rejected
+    (a missing status, "Already added!", ...) under errored. Without a look at
+    those, a push can lose data without a trace."""
+    try:
+        data = resp.json()
+    except ValueError:
+        return
+    if not isinstance(data, dict):
+        return
+    for key in ("notFound", "errored"):
+        section = data.get(key)
+        if not isinstance(section, dict):
+            continue
+        counts = {name: len(items) for name, items in section.items() if isinstance(items, list) and items}
+        if counts:
+            logger.warning("WeTrakr %s: %s %s", label, key, counts)
+
+
 def _headers(access_token: Optional[str] = None) -> dict:
     h = {
         "Content-Type": "application/json",
@@ -116,7 +136,17 @@ async def poll_device_token(device_code: str) -> Optional[dict]:
         )
         if resp.status_code == 200:
             return resp.json()
-        if resp.status_code in (400, 429):
+        if resp.status_code == 400:
+            # 400 is "pending" while the user has not answered, but an
+            # invalid_request 400 is a fault in this request: stop polling.
+            try:
+                error = (resp.json() or {}).get("error")
+            except ValueError:
+                error = None
+            if error == "invalid_request":
+                raise WeTrakrAuthError("WeTrakr rejected the authorization request. Please try connecting again.")
+            return None
+        if resp.status_code == 429:
             return None
         messages = {
             404: "Invalid device code. Please try connecting again.",
@@ -251,6 +281,7 @@ async def add_items_to_list(access_token: str, list_id: int, movies: list[int], 
             headers=_headers(access_token),
         )
         resp.raise_for_status()
+        _log_unresolved("list items push", resp)
 
 
 # ── Comments ───────────────────────────────────────────────────────────────────
@@ -381,10 +412,13 @@ async def add_to_watched_batch(
                     {
                         "number": season,
                         "episodes": [
+                            # status is required on every item, nested
+                            # episodes included (an item without one comes
+                            # back in errored and nothing is written).
                             (
-                                {"number": n, "tracked_at": _iso_utc(watched_at)}
+                                {"number": n, "status": "watched", "tracked_at": _iso_utc(watched_at)}
                                 if watched_at is not None
-                                else {"number": n, "tracked_at_unknown": True}
+                                else {"number": n, "status": "watched", "tracked_at_unknown": True}
                             )
                             for n, watched_at in eps
                         ],
@@ -401,6 +435,7 @@ async def add_to_watched_batch(
             headers=_headers(access_token),
         )
         resp.raise_for_status()
+        _log_unresolved("watched push", resp)
 
 
 async def set_ratings_batch(
@@ -434,3 +469,4 @@ async def set_ratings_batch(
             headers=_headers(access_token),
         )
         resp.raise_for_status()
+        _log_unresolved("ratings push", resp)
