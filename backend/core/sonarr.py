@@ -99,6 +99,30 @@ async def get_tags(url: str, token: str) -> List[Dict[str, Any]]:
         logger.error(f"Failed to fetch Sonarr tags: {e}")
         return []
 
+async def get_series_seasons(url: str, token: str, tvdb_id: int) -> List[Dict[str, Any]]:
+    """Season numbers Sonarr knows for a series (via lookup) with Sonarr's own
+    default monitored flag; [] on failure or unknown series."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            res = await client.get(
+                f"{url.rstrip('/')}/api/v3/series/lookup",
+                headers={"X-Api-Key": token},
+                params={"term": f"tvdb:{tvdb_id}"},
+            )
+            res.raise_for_status()
+            data = res.json()
+            if not data:
+                return []
+            return [
+                {"season_number": s["seasonNumber"], "monitored": bool(s.get("monitored"))}
+                for s in data[0].get("seasons", [])
+                if s.get("seasonNumber") is not None
+            ]
+    except Exception as e:
+        logger.error(f"Failed to fetch Sonarr seasons: {e}")
+        return []
+
+
 async def add_series(
     url: str,
     token: str,
@@ -109,8 +133,10 @@ async def add_series(
     monitored: bool = True,
     search_for_missing_episodes: bool = True,
     season_folder: bool = True,
+    seasons: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
-    """Add a series to Sonarr."""
+    """Add a series to Sonarr. `seasons`, when given, is the list of season
+    numbers to monitor; every other season is added unmonitored."""
     try:
         url = url.rstrip("/")
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
@@ -140,6 +166,10 @@ async def add_series(
                 "seasonFolder": season_folder,
                 "tags": tags or [],
                 "monitored": monitored,
+                **({"seasons": [
+                    {**s, "monitored": s.get("seasonNumber") in seasons}
+                    for s in series_data.get("seasons", [])
+                ]} if seasons is not None else {}),
                 "addOptions": {
                     "searchForMissingEpisodes": search_for_missing_episodes
                 }

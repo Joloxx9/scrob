@@ -3883,6 +3883,8 @@ async def get_request_status(
 @router.get("/{type}/customize-options")
 async def get_customize_options(
     type: MediaType,
+    tmdb_id: int | None = None,
+    tvdb_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -3927,7 +3929,19 @@ async def get_customize_options(
             sonarr.get_quality_profiles(sonarr_cfg.sonarr_url, sonarr_cfg.sonarr_token),
             sonarr.get_tags(sonarr_cfg.sonarr_url, sonarr_cfg.sonarr_token),
         )
+        seasons: list = []
+        try:
+            if not tvdb_id and tmdb_id:
+                from core import tmdb
+                tmdb_key = await get_user_tmdb_key(db, current_user.id)
+                ext_ids = await tmdb.get_external_ids(tmdb_id, "tv", api_key=tmdb_key)
+                tvdb_id = ext_ids.get("tvdb_id")
+            if tvdb_id:
+                seasons = await sonarr.get_series_seasons(sonarr_cfg.sonarr_url, sonarr_cfg.sonarr_token, tvdb_id)
+        except Exception:
+            seasons = []
         return {
+            "seasons": seasons,
             "root_folders": root_folders,
             "quality_profiles": quality_profiles,
             "tags": tags,
@@ -3953,6 +3967,7 @@ class RequestOverrides(BaseModel):
     quality_profile: int | None = None
     tags: list[int] | None = None
     season_folder: bool | None = None
+    seasons: list[int] | None = None
 
 
 def _resolve_add_overrides(overrides: RequestOverrides | None, is_admin: bool) -> RequestOverrides | None:
@@ -4003,6 +4018,7 @@ async def request_series_by_tvdb(
             quality_profile_id=(ov.quality_profile if ov and ov.quality_profile is not None else sonarr_cfg.sonarr_quality_profile),
             tags=(ov.tags if ov and ov.tags is not None else sonarr_cfg.sonarr_tags),
             season_folder=(ov.season_folder if ov and ov.season_folder is not None else default_season_folder),
+            seasons=(ov.seasons if ov else None),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sonarr error: {e}")
@@ -4121,6 +4137,7 @@ async def request_media(
                 quality_profile_id=(ov.quality_profile if ov and ov.quality_profile is not None else sonarr_cfg.sonarr_quality_profile),
                 tags=(ov.tags if ov and ov.tags is not None else sonarr_cfg.sonarr_tags),
                 season_folder=(ov.season_folder if ov and ov.season_folder is not None else default_season_folder),
+                seasons=(ov.seasons if ov else None),
             )
             return res
         except Exception as e:

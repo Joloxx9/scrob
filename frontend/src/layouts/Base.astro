@@ -495,6 +495,13 @@ const bottomNavItem = (active: boolean) =>
           <input type="checkbox" id="customize-add-season-folder" class="sr-only peer" />
           <div class="relative w-10 h-5 bg-zinc-700 peer-checked:bg-blue-600 rounded-full transition-colors pointer-events-none shrink-0 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform peer-checked:after:translate-x-5"></div>
         </label>
+        <div id="customize-add-seasons-row" class="hidden space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="block text-sm font-medium text-zinc-400">Seasons to monitor</span>
+            <button type="button" id="customize-add-seasons-toggle" class="text-xs text-zinc-500 hover:text-zinc-200 transition cursor-pointer">Select none</button>
+          </div>
+          <div id="customize-add-seasons" class="flex flex-wrap gap-2 p-2 bg-zinc-950 border border-zinc-800 rounded-lg"></div>
+        </div>
         <div id="customize-add-error" class="hidden text-sm text-red-400"></div>
       </div>
       <div id="customize-add-footer" class="hidden border-t border-zinc-800 px-5 py-4 flex gap-2">
@@ -1565,6 +1572,38 @@ const bottomNavItem = (active: boolean) =>
     // ── Customize-on-add modal (admin-only - root folder/quality profile/
     // tags/season-folder override for one Radarr/Sonarr add) ────────────────
     let _customizeAddTags: number[] = [];
+    let _customizeAddSeasons: number[] = [];
+
+    function renderCustomizeAddSeasons(seasons: any[]) {
+      const row = document.getElementById('customize-add-seasons-row')!;
+      const container = document.getElementById('customize-add-seasons')!;
+      const toggle = document.getElementById('customize-add-seasons-toggle')!;
+      row.classList.toggle('hidden', !seasons || seasons.length === 0);
+      if (!seasons || seasons.length === 0) return;
+      const pillClass = (on: boolean) => on
+        ? 'ring-1 ring-blue-500 border-blue-500/50 bg-blue-500/10 text-zinc-100'
+        : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-300';
+      const draw = () => {
+        container.innerHTML = seasons.map((s: any) =>
+          `<button type="button" data-season="${s.season_number}" class="px-2 py-1 text-xs font-medium rounded-md border transition-colors cursor-pointer ${pillClass(_customizeAddSeasons.includes(s.season_number))}">${s.season_number === 0 ? 'Specials' : 'S' + s.season_number}</button>`
+        ).join('');
+        toggle.textContent = _customizeAddSeasons.length === seasons.length ? 'Select none' : 'Select all';
+        container.querySelectorAll('button').forEach((pill) => {
+          pill.addEventListener('click', () => {
+            const n = parseInt((pill as HTMLElement).dataset.season!);
+            _customizeAddSeasons = _customizeAddSeasons.includes(n)
+              ? _customizeAddSeasons.filter(x => x !== n)
+              : [..._customizeAddSeasons, n];
+            draw();
+          });
+        });
+      };
+      toggle.onclick = () => {
+        _customizeAddSeasons = _customizeAddSeasons.length === seasons.length ? [] : seasons.map((s: any) => s.season_number);
+        draw();
+      };
+      draw();
+    }
 
     function closeCustomizeAddPopover() {
       document.getElementById('customize-add-popover')!.classList.add('hidden');
@@ -1600,7 +1639,7 @@ const bottomNavItem = (active: boolean) =>
       });
     }
 
-    async function openCustomizeAddPopover(mediaType: string, onConfirm: (overrides: Record<string, unknown>) => Promise<void>) {
+    async function openCustomizeAddPopover(mediaType: string, onConfirm: (overrides: Record<string, unknown>) => Promise<void>, idQuery = '') {
       const popover = document.getElementById('customize-add-popover')!;
       const loading = document.getElementById('customize-add-loading')!;
       const body = document.getElementById('customize-add-body')!;
@@ -1615,10 +1654,12 @@ const bottomNavItem = (active: boolean) =>
       footer.classList.add('hidden');
       errorEl.classList.add('hidden');
       seasonRow.classList.toggle('hidden', !isSeries);
+      document.getElementById('customize-add-seasons-row')!.classList.add('hidden');
+      _customizeAddSeasons = [];
       popover.classList.remove('hidden');
 
       try {
-        const opts = await apiFetch(`/media/${mediaType}/customize-options`);
+        const opts = await apiFetch(`/media/${mediaType}/customize-options${idQuery}`);
 
         const rootSelect = document.getElementById('customize-add-root-folder') as HTMLSelectElement;
         rootSelect.innerHTML = opts.root_folders.map((f: any) =>
@@ -1635,6 +1676,8 @@ const bottomNavItem = (active: boolean) =>
 
         if (isSeries) {
           (document.getElementById('customize-add-season-folder') as HTMLInputElement).checked = opts.current.season_folder !== false;
+          _customizeAddSeasons = (opts.seasons || []).filter((s: any) => s.monitored).map((s: any) => s.season_number);
+          renderCustomizeAddSeasons(opts.seasons || []);
         }
 
         loading.classList.add('hidden');
@@ -1656,6 +1699,15 @@ const bottomNavItem = (active: boolean) =>
         };
         if (isSeries) {
           overrides.season_folder = (document.getElementById('customize-add-season-folder') as HTMLInputElement).checked;
+          // Only sent when the season list loaded; otherwise Sonarr's default applies.
+          if (!document.getElementById('customize-add-seasons-row')!.classList.contains('hidden')) {
+            if (_customizeAddSeasons.length === 0) {
+              errorEl.textContent = 'Select at least one season.';
+              errorEl.classList.remove('hidden');
+              return;
+            }
+            overrides.seasons = _customizeAddSeasons;
+          }
         }
         closeCustomizeAddPopover();
         await onConfirm(overrides);
@@ -2461,7 +2513,11 @@ const bottomNavItem = (active: boolean) =>
           (mediaType === 'series' && (window as any).__SONARR_CUSTOMIZE_ON_ADD__)
         );
         if (customizeOnAdd) {
-          openCustomizeAddPopover(mediaType, performRequestAdd);
+          openCustomizeAddPopover(
+            mediaType,
+            performRequestAdd,
+            mediaType === 'series' ? `?${card.dataset.tvdbOnly === 'true' ? 'tvdb_id' : 'tmdb_id'}=${tmdbId}` : '',
+          );
         } else {
           await performRequestAdd();
         }
