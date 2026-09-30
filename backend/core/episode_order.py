@@ -476,6 +476,38 @@ async def get_mapping_by_tvdb_position(
     return result.scalar_one_or_none()
 
 
+async def load_tvdb_episode_id_positions(
+    db: AsyncSession,
+    series_tmdb_ids: list[int],
+    tvdb_episode_ids: list[int],
+) -> dict[tuple[int, int], tuple[int, int]]:
+    """(series_tmdb_id, TVDB episode id) -> the canonical (tmdb_season,
+    tmdb_episode) of that episode, for every mapping where the two numbering
+    schemes disagree (#447).
+
+    Keyed on the episode's own TVDB id rather than on season/episode numbers:
+    a Jellyfin/Emby item carries its episode id in ProviderIds, so the match
+    is provable whatever numbering the server's metadata provider uses, where
+    translating raw numbers would have to assume they are TVDB's."""
+    if not series_tmdb_ids or not tvdb_episode_ids:
+        return {}
+    out: dict[tuple[int, int], tuple[int, int]] = {}
+    step = 10_000  # stay well under the 32767 bind-parameter limit
+    for i in range(0, len(tvdb_episode_ids), step):
+        chunk = tvdb_episode_ids[i : i + step]
+        rows = (await db.execute(
+            select(EpisodeOrderMapping).where(
+                EpisodeOrderMapping.series_tmdb_id.in_(series_tmdb_ids),
+                EpisodeOrderMapping.tvdb_id.in_(chunk),
+                (EpisodeOrderMapping.tmdb_season_number != EpisodeOrderMapping.tvdb_season_number)
+                | (EpisodeOrderMapping.tmdb_episode_number != EpisodeOrderMapping.tvdb_episode_number),
+            )
+        )).scalars().all()
+        for m in rows:
+            out[(m.series_tmdb_id, m.tvdb_id)] = (m.tmdb_season_number, m.tmdb_episode_number)
+    return out
+
+
 async def get_episode_orders_for_series(
     db: AsyncSession,
     user_id: int,
@@ -1018,15 +1050,16 @@ async def reconcile_divergent_episode_media(
         # automatically the mis-tracked artifact of this mapped episode -
         # TVDB and TMDB can assign genuinely different, unrelated episodes to
         # the same numeric slot. Only merge if `divergent` is provably that
-        # artifact: enrich_episode_from_tvdb (core/enrichment.py) always
-        # stores the raw TVDB episode id in tmdb_id for an episode with no
-        # TMDB counterpart, which is the exact same id this mapping's
-        # tvdb_id was built from. Without this check, a real, correctly
-        # tracked TMDB episode that just happens to share the same raw
-        # (season, episode) numbers as this mapping's TVDB position would
-        # get its watch history/ratings/etc. silently merged into a
-        # completely different episode.
-        if divergent.tmdb_id != mapping.tvdb_id:
+        # artifact: its TVDB episode id is the exact id this mapping's
+        # tvdb_id was built from. Rows now keep that id in Media.tvdb_id
+        # (#447); rows from before the dual-identity change stored it in
+        # tmdb_id instead, so fall back to that only when tvdb_id is unset.
+        # Without this check, a real, correctly tracked TMDB episode that
+        # just happens to share the same raw (season, episode) numbers as
+        # this mapping's TVDB position would get its watch history/ratings/etc.
+        # silently merged into a completely different episode.
+        divergent_tvdb_id = divergent.tvdb_id if divergent.tvdb_id is not None else divergent.tmdb_id
+        if divergent_tvdb_id != mapping.tvdb_id:
             continue
 
         try:

@@ -1560,5 +1560,117 @@ class MatchUnmatchedShowDisplacedTmdbIdTests(_PartialWatchDB):
             self.assertEqual(leftover, 1)
 
 
+class CanonicalEpisodePositionTests(unittest.TestCase):
+    """#447: pull sync resolves a Jellyfin/Emby episode through its TVDB episode
+    id instead of trusting the server's own season/episode numbers."""
+
+    POSITIONS = {(100, 4562021): (2, 79)}
+
+    def _item(self, **over):
+        item = {"ParentIndexNumber": 2, "IndexNumber": 21, "ProviderIds": {"Tvdb": "4562021"}}
+        item.update(over)
+        return item
+
+    def test_translates_on_an_exact_episode_id_match(self):
+        self.assertEqual(sync._canonical_episode_position(self._item(), 100, self.POSITIONS), (2, 79))
+
+    def test_keeps_raw_numbers_without_a_tvdb_episode_id(self):
+        self.assertIsNone(sync._canonical_episode_position(self._item(ProviderIds={"Tmdb": "5"}), 100, self.POSITIONS))
+        self.assertIsNone(sync._canonical_episode_position(self._item(ProviderIds=None), 100, self.POSITIONS))
+
+    def test_never_matches_by_numbers_or_across_series(self):
+        # same raw numbers, different episode id: not the mapped episode
+        self.assertIsNone(sync._canonical_episode_position(self._item(ProviderIds={"Tvdb": "1"}), 100, self.POSITIONS))
+        self.assertIsNone(sync._canonical_episode_position(self._item(), 200, self.POSITIONS))
+        self.assertIsNone(sync._canonical_episode_position(self._item(), None, self.POSITIONS))
+
+    def test_skips_multi_episode_files(self):
+        self.assertIsNone(sync._canonical_episode_position(self._item(IndexNumberEnd=22), 100, self.POSITIONS))
+
+
+class FoldDivergentEpisodesTests(unittest.IsolatedAsyncioTestCase):
+    """#447: a divergent twin left by an earlier sync/webhook is settled before
+    the sync loop, so the same episode is not collected or watched twice."""
+
+    async def asyncSetUp(self):
+        import models  # noqa: F401
+        from models.base import Base
+        self.engine = create_async_engine(
+            "sqlite+aiosqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+        )
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        self.Session = async_sessionmaker(self.engine, expire_on_commit=False)
+        self.addAsyncCleanup(self.engine.dispose)
+
+    def _item(self, tvdb="4562021"):
+        return {"SeriesId": "jf-show", "ParentIndexNumber": 2, "IndexNumber": 21, "ProviderIds": {"Tvdb": tvdb}}
+
+    async def _seed(self, db, *, canonical, divergent_tvdb=4562021):
+        from models.base import MediaType
+        from models.media import Media
+        from models.show import Show
+        show = Show(tmdb_id=100, title="S")
+        db.add(show)
+        await db.flush()
+        rows = {}
+        if canonical:
+            rows["canonical"] = Media(tmdb_id=2300, media_type=MediaType.episode, title="c", show_id=show.id, season_number=2, episode_number=79)
+        rows["divergent"] = Media(tvdb_id=divergent_tvdb, media_type=MediaType.episode, title="d", show_id=show.id, season_number=2, episode_number=21)
+        db.add_all(rows.values())
+        await db.flush()
+        return show, rows
+
+    def _maps(self, show, rows):
+        by_ep = {(show.id, m.season_number, m.episode_number): m for m in rows.values()}
+        return {"jf-show": show.id}, {show.id: 100}, by_ep
+
+    async def test_moves_the_twin_to_the_canonical_position_when_no_canonical_row_exists(self):
+        async with self.Session() as db:
+            show, rows = await self._seed(db, canonical=False)
+            show_map, tmdb_map, by_ep = self._maps(show, rows)
+            changed, moved = await sync._fold_divergent_episodes(
+                db, [self._item()], show_map, tmdb_map, {(100, 4562021): (2, 79)}, by_ep,
+            )
+            div = rows["divergent"]
+            self.assertTrue(changed)
+            self.assertEqual(moved, [div])
+            self.assertEqual((div.season_number, div.episode_number), (2, 79))
+            self.assertIs(by_ep[(show.id, 2, 79)], div)
+            self.assertNotIn((show.id, 2, 21), by_ep)
+
+    async def test_does_not_move_a_row_that_is_a_different_episode(self):
+        async with self.Session() as db:
+            show, rows = await self._seed(db, canonical=False, divergent_tvdb=999)
+            show_map, tmdb_map, by_ep = self._maps(show, rows)
+            changed, moved = await sync._fold_divergent_episodes(
+                db, [self._item()], show_map, tmdb_map, {(100, 4562021): (2, 79)}, by_ep,
+            )
+            self.assertFalse(changed)
+            self.assertEqual(moved, [])
+            self.assertEqual(rows["divergent"].episode_number, 21)
+
+    async def test_merges_the_twin_when_the_canonical_row_exists(self):
+        async with self.Session() as db:
+            show, rows = await self._seed(db, canonical=True)
+            show_map, tmdb_map, by_ep = self._maps(show, rows)
+            with patch.object(sync, "reconcile_divergent_episode_media", AsyncMock(return_value={"merged": 1})) as rec:
+                changed, moved = await sync._fold_divergent_episodes(
+                    db, [self._item()], show_map, tmdb_map, {(100, 4562021): (2, 79)}, by_ep,
+                )
+            self.assertTrue(changed)
+            self.assertEqual(moved, [])  # the canonical row is already enriched
+            rec.assert_awaited_once()
+
+    async def test_untranslated_items_are_left_alone(self):
+        async with self.Session() as db:
+            show, rows = await self._seed(db, canonical=False)
+            show_map, tmdb_map, by_ep = self._maps(show, rows)
+            changed, moved = await sync._fold_divergent_episodes(
+                db, [self._item(tvdb="1")], show_map, tmdb_map, {(100, 4562021): (2, 79)}, by_ep,
+            )
+            self.assertFalse(changed)
+
+
 if __name__ == "__main__":
     unittest.main()

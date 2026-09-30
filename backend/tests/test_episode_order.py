@@ -420,8 +420,12 @@ class EpisodeOrderMappingTests(unittest.IsolatedAsyncioTestCase):
                     _ExistingResult([(201,), (202,)]),                  # watched_q — both watched
                     _ExistingResult([(201,)]),                          # collected_q — only 201 collected
                     _ExistingResult([]),                                # episode_ratings_q
-                    _ScalarOneResult(None),                             # show_media_result
+                    # find_media (core/identity.py) tries tmdb_id, then falls back to tvdb_id
+                    _ScalarOneResult(None),                             # show media by tmdb_id
+                    _ScalarOneResult(None),                             # show media by tvdb_id
                     _ExistingResult([]),                                # user_lists_q — no lists for this user
+                    _ScalarOneResult(None),                             # whole-show rating media by tmdb_id
+                    _ScalarOneResult(None),                             # whole-show rating media by tvdb_id
                 ]
             ),
         )
@@ -899,6 +903,43 @@ class ReconcileDivergentEpisodeMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats, {"merged": 1, "checked": 1})
         db.delete.assert_awaited_once_with(divergent)
 
+    async def test_merges_a_divergent_row_identified_by_tvdb_id(self) -> None:
+        # #447: since the dual-identity change the TVDB episode id lives in
+        # Media.tvdb_id and tmdb_id is NULL for a TVDB-only episode.
+        canonical = Media(id=1, tmdb_id=100, media_type=MediaType.episode, show_id=9, season_number=1, episode_number=25)
+        divergent = Media(id=2, tmdb_id=None, tvdb_id=700, media_type=MediaType.episode, show_id=9, season_number=2, episode_number=1)
+        db = AsyncMock()
+        db.begin_nested = MagicMock(return_value=_NestedTxn())
+        db.delete = AsyncMock()
+        db.flush = AsyncMock()
+        db.execute.side_effect = [
+            _ExistingResult([SimpleNamespace(tmdb_season_number=1, tmdb_episode_number=25, tvdb_season_number=2, tvdb_episode_number=1, tvdb_id=700)]),
+            _ScalarOneResult(canonical),
+            _ScalarOneResult(divergent),
+            None,  # update(WatchEvent)
+            _ExistingResult([]), _ExistingResult([]), _ExistingResult([]), _ExistingResult([]), _ExistingResult([]),
+            None,  # update(Comment)
+        ]
+        stats = await reconcile_divergent_episode_media(db, self._show())
+        self.assertEqual(stats, {"merged": 1, "checked": 1})
+        db.delete.assert_awaited_once_with(divergent)
+
+    async def test_does_not_merge_when_tvdb_id_differs_even_if_tmdb_id_collides(self) -> None:
+        # A row with its own, different tvdb_id is a different episode; a
+        # tmdb_id that happens to equal the mapping's tvdb_id must not count.
+        canonical = Media(id=1, tmdb_id=100, media_type=MediaType.episode, show_id=9, season_number=1, episode_number=25)
+        other = Media(id=3, tmdb_id=700, tvdb_id=555, media_type=MediaType.episode, show_id=9, season_number=2, episode_number=1)
+        db = AsyncMock()
+        db.begin_nested = MagicMock(return_value=_NestedTxn())
+        db.execute.side_effect = [
+            _ExistingResult([SimpleNamespace(tmdb_season_number=1, tmdb_episode_number=25, tvdb_season_number=2, tvdb_episode_number=1, tvdb_id=700)]),
+            _ScalarOneResult(canonical),
+            _ScalarOneResult(other),
+        ]
+        stats = await reconcile_divergent_episode_media(db, self._show())
+        self.assertEqual(stats["merged"], 0)
+        db.begin_nested.assert_not_called()
+
     async def test_does_not_merge_an_unrelated_episode_at_the_same_raw_position(self) -> None:
         # Regression: TVDB and TMDB can assign different, unrelated episodes
         # to the same numeric (season, episode) slot. A Media row sitting at
@@ -1286,6 +1327,37 @@ class ListAvailableOrdersTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("tvdb:type:4271", keys)
         self.assertNotIn("tmdb:group:g2", keys)
         self.assertNotIn("tmdb:group:g3", keys)
+
+
+class LoadTvdbEpisodeIdPositionsTests(_PositionsDB):
+    """#447: a Jellyfin/Emby item is resolved through its own TVDB episode id,
+    so no assumption about the numbering the server reports is needed."""
+
+    async def test_returns_canonical_position_only_where_orders_disagree(self) -> None:
+        from models.episode_order import EpisodeOrderMapping
+
+        def row(tmdb_s, tmdb_e, tvdb_s, tvdb_e, tvdb_id, series=100):
+            return EpisodeOrderMapping(
+                series_tmdb_id=series, tmdb_season_number=tmdb_s, tmdb_episode_number=tmdb_e,
+                tmdb_episode_id=tvdb_id + 1, tvdb_id=tvdb_id,
+                tvdb_season_number=tvdb_s, tvdb_episode_number=tvdb_e,
+            )
+
+        async with self.Session() as db:
+            db.add_all([
+                row(2, 79, 2, 21, 4562021),           # diverges
+                row(1, 1, 1, 1, 4562001),             # same position both sides
+                row(3, 5, 3, 6, 4562022, series=200),  # other series
+            ])
+            await db.commit()
+            got = await _eo.load_tvdb_episode_id_positions(db, [100], [4562021, 4562001, 4562022, 999])
+
+        self.assertEqual(got, {(100, 4562021): (2, 79)})
+
+    async def test_empty_inputs_short_circuit(self) -> None:
+        async with self.Session() as db:
+            self.assertEqual(await _eo.load_tvdb_episode_id_positions(db, [], [1]), {})
+            self.assertEqual(await _eo.load_tvdb_episode_id_positions(db, [1], []), {})
 
 
 if __name__ == "__main__":

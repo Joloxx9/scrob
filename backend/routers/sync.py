@@ -32,6 +32,7 @@ from core.jellyfin import get_jellyfin_tmdb_id
 import core.trakt as trakt_client
 from core.enrichment import enrich_media, is_unmapped_tvdb_episode, create_media_safely, enrich_media_safely, apply_media_change_safely, enrich_episode_from_tvdb
 from core.identity import coerce_id, link_show_ids
+from core.episode_order import load_tvdb_episode_id_positions, reconcile_divergent_episode_media
 from core.image_cache import pre_cache_all_collected_bg
 from core.translations import get_user_metadata_language
 from core.rewatch import record_rewatch_progress, get_active_rewatches_for_shows
@@ -1854,6 +1855,79 @@ def _expand_multi_episode_items(items: list, media_type: MediaType, source: Coll
     return expanded
 
 
+def _canonical_episode_position(
+    item: dict, series_tmdb_id: int | None, positions: dict[tuple[int, int], tuple[int, int]]
+) -> tuple[int, int] | None:
+    """The canonical TMDB (season, episode) of a Jellyfin/Emby episode item, found
+    through the episode's own TVDB id (#447), or None to keep the raw numbers.
+
+    The server's SeasonNumber/EpisodeNumber follow whatever metadata provider it
+    uses, so they are never assumed to be TVDB's - only an exact episode-id match
+    against an EpisodeOrderMapping row counts. A multi-episode file is skipped: its
+    ProviderIds belong to the first episode only, not to each expanded copy."""
+    if not series_tmdb_id or item.get("IndexNumberEnd") is not None:
+        return None
+    tvdb_id = jellyfin.get_jellyfin_tvdb_id(item.get("ProviderIds") or {})
+    return positions.get((series_tmdb_id, tvdb_id)) if tvdb_id else None
+
+
+async def _fold_divergent_episodes(
+    db: AsyncSession,
+    items: list,
+    show_map: dict,
+    show_id_to_tmdb: dict,
+    tvdb_positions: dict[tuple[int, int], tuple[int, int]],
+    media_by_episode: dict,
+) -> tuple[bool, list[Media]]:
+    """#447: settle divergent twins of translated items before the sync loop. Returns
+    (changed, moved_rows): changed is True when any row moved or merged, so the caller
+    must reload its lookup maps; moved_rows are the rows repositioned onto a canonical
+    slot, which still lack their TMDB data and need enriching."""
+    # A divergent twin from before this ran (or from the webhook path) holds the
+    # watch history. Where the canonical row exists, fold the twin into it; where
+    # it was never created, move the twin itself to the canonical position. Either
+    # way this sync then neither duplicates the file nor records the watch twice.
+    reconcile_show_ids: set[int] = set()
+    moved_rows: list[Media] = []
+    for it in items:
+        sid = show_map.get(str(it.get("SeriesId")))
+        pos = _canonical_episode_position(it, show_id_to_tmdb.get(sid), tvdb_positions)
+        raw = (sid, it.get("ParentIndexNumber"), it.get("IndexNumber"))
+        divergent = media_by_episode.get(raw) if pos and sid else None
+        if divergent is None:
+            continue
+        canonical = media_by_episode.get((sid, *pos))
+        if canonical is divergent:
+            continue
+        if canonical is not None:
+            reconcile_show_ids.add(sid)
+            continue
+        # Only a row provably this very episode may be moved: the raw slot can
+        # just as well hold a genuinely different TMDB episode. Same identity
+        # rule as reconcile_divergent_episode_media (tmdb_id only as the legacy
+        # stand-in for a TVDB id when tvdb_id was never set).
+        item_tvdb_id = jellyfin.get_jellyfin_tvdb_id(it.get("ProviderIds") or {})
+        row_tvdb_id = divergent.tvdb_id if divergent.tvdb_id is not None else divergent.tmdb_id
+        if row_tvdb_id != item_tvdb_id:
+            continue
+        divergent.season_number, divergent.episode_number = pos
+        del media_by_episode[raw]
+        media_by_episode[(sid, *pos)] = divergent
+        moved_rows.append(divergent)
+    if moved_rows:
+        await db.flush()
+    merged_any = bool(moved_rows)
+    for sid in reconcile_show_ids:
+        show_row = await db.get(Show, sid)
+        if show_row:
+            try:
+                stats_r = await reconcile_divergent_episode_media(db, show_row)
+                merged_any = merged_any or bool(stats_r.get("merged"))
+            except Exception:
+                logger.exception("Pre-sync episode reconciliation failed for show=%s", sid)
+    return merged_any, moved_rows
+
+
 async def sync_items(
     items: list,
     media_type: MediaType,
@@ -1965,6 +2039,49 @@ async def sync_items(
             for m in medias:
                 media_by_tmdb[(m.tmdb_id, m.media_type)] = m
 
+    # #447: Jellyfin/Emby report their own numbering, which for a show whose TVDB and
+    # TMDB layouts diverge is not the canonical TMDB position every other path uses.
+    # Resolve each item through its episode-level TVDB id so the lookups below land
+    # on the canonical row instead of creating a divergent twin on every sync.
+    tvdb_positions: dict[tuple[int, int], tuple[int, int]] = {}
+    moved_rows: list[Media] = []
+    if media_type == MediaType.episode and source in _MEDIA_BROWSER_ITEM_SOURCES and show_ids:
+        series_ids = sorted({t for t in show_id_to_tmdb.values() if t})
+        item_tvdb_ids = sorted({
+            tid for it in items
+            if it.get("IndexNumberEnd") is None
+            and (tid := jellyfin.get_jellyfin_tvdb_id(it.get("ProviderIds") or {}))
+        })
+        tvdb_positions = await load_tvdb_episode_id_positions(db, series_ids, item_tvdb_ids)
+
+    if tvdb_positions:
+        merged_any, moved_rows = await _fold_divergent_episodes(
+            db, items, show_map, show_id_to_tmdb, tvdb_positions, media_by_episode
+        )
+        if merged_any:
+            await db.commit()
+            media_by_episode.clear()
+            for m in await _select_in_chunks(
+                db,
+                lambda chunk: select(Media).where(Media.media_type == MediaType.episode, Media.show_id.in_(chunk)),
+                show_ids,
+            ):
+                media_by_episode[(m.show_id, m.season_number, m.episode_number)] = m
+            # The CollectionFiles were keyed on the rows' old positions.
+            files_q = await db.execute(
+                select(CollectionFile, Collection.media_id, Media)
+                .join(Collection, Collection.id == CollectionFile.collection_id)
+                .join(Media, Media.id == Collection.media_id)
+                .where(Collection.user_id == user_id, CollectionFile.source == source)
+            )
+            files_rows = files_q.all()
+            existing_files = {(f.source_id, m.episode_number): (f, media_id, m) for f, media_id, m in files_rows}
+            files_by_media_source = {(media_id, f.source): f for f, media_id, _ in files_rows}
+            colls_q = await db.execute(
+                select(Collection.id, Collection.media_id).where(Collection.user_id == user_id)
+            )
+            existing_coll_by_media_id = {media_id: coll_id for coll_id, media_id in colls_q.all()}
+
     # Reverse lookup: media.id → Media object (for healing unenriched items in skipped branch)
     media_by_id: dict[int, Media] = {m.id: m for _, _, m in files_rows}
     for m in list(media_by_episode.values()) + list(media_by_tmdb.values()):
@@ -2012,6 +2129,9 @@ async def sync_items(
 
     # ── Phase 2: Main sync loop (no N+1 queries, savepoints for error isolation) ──
     new_media_for_enrichment: list[tuple] = []  # (Media, series_tmdb_id | None)
+    # Rows moved onto their canonical slot above: fill in the TMDB data (and tmdb_id)
+    # they never had, exactly like a newly created episode.
+    new_media_for_enrichment.extend((m, show_id_to_tmdb.get(m.show_id)) for m in moved_rows)
     skipped_warnings: list[dict] = []
 
     # collection_id → earliest add-date seen this run, applied in batches so a
@@ -2039,6 +2159,12 @@ async def sync_items(
                     name = item.get("Name")
                     season_num = item.get("ParentIndexNumber")
                     episode_num = item.get("IndexNumber")
+                    if tvdb_positions:
+                        canonical_pos = _canonical_episode_position(
+                            item, show_id_to_tmdb.get(show_map.get(str(parent_id))), tvdb_positions
+                        )
+                        if canonical_pos:
+                            season_num, episode_num = canonical_pos
                 else:  # Plex
                     source_id = str(item.get("ratingKey"))
                     quality = plex.extract_quality(item.get("Media", []))
