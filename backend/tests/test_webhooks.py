@@ -2063,6 +2063,37 @@ class BackfillKodiRuntimeTests(IsolatedAsyncioTestCase):
         self.assertEqual(db.commits, 0)
 
 
+class FindOrCreateShowRaceTests(IsolatedAsyncioTestCase):
+    """#446: one media server feeding two Scrob accounts delivers the same
+    webhook to both at once, so both decide a brand-new show is missing and
+    both insert it. The loser must get the winner's row back, not a failed
+    session and a 500 (which dropped the event for that user)."""
+
+    SHOW = {"name": "Deadwood", "external_ids": {}, "seasons": []}
+
+    async def test_creates_the_show_inside_a_savepoint(self) -> None:
+        db = _OpenSessionFakeDB([None])
+        with patch("routers.webhooks.tmdb.get_show", AsyncMock(return_value=self.SHOW)):
+            show = await webhooks._find_or_create_show(db, 1406, "k")
+        self.assertEqual(show.tmdb_id, 1406)
+        # add() happens inside the savepoint, never before it.
+        self.assertEqual(db.events, ["begin_nested", "add"])
+
+    async def test_loser_of_the_insert_race_gets_the_winners_row(self) -> None:
+        winner = SimpleNamespace(id=7, tmdb_id=1406)
+        db = _OpenSessionFakeDB([None, winner], flush_raises=IntegrityError("insert", {}, Exception("dup tmdb_id")))
+        with patch("routers.webhooks.tmdb.get_show", AsyncMock(return_value=self.SHOW)):
+            show = await webhooks._find_or_create_show(db, 1406, "k")
+        self.assertIs(show, winner)
+
+    async def test_an_integrity_error_with_no_winning_row_still_raises(self) -> None:
+        # e.g. a tvdb_id clash: nothing exists for this tmdb_id to fall back to.
+        db = _OpenSessionFakeDB([None, None], flush_raises=IntegrityError("insert", {}, Exception("dup tvdb_id")))
+        with patch("routers.webhooks.tmdb.get_show", AsyncMock(return_value=self.SHOW)):
+            with self.assertRaises(IntegrityError):
+                await webhooks._find_or_create_show(db, 1406, "k")
+
+
 class FindOrCreateMediaKodiShowIdTests(IsolatedAsyncioTestCase):
     """Kodi puts the *show* TMDB id in an episode's uniqueid whenever its
     scraper has no episode-level id, and add-ons forward it as-is. Shows and

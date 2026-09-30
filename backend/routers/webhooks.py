@@ -456,8 +456,23 @@ async def _find_or_create_show(db: AsyncSession, series_tmdb_id: int, api_key: s
                 ],
             },
         )
-        db.add(show)
-        await db.flush()
+        # Two webhooks for the same brand-new show can land together - e.g. one
+        # media server feeding two Scrob accounts delivers the same event to
+        # both (#446). The SELECT above isn't atomic, so both decide the show is
+        # missing and both insert; the loser hits shows.tmdb_id's unique index.
+        # add()+flush() sit inside a savepoint so that failure rolls back only
+        # this INSERT, then the winner's row is returned, instead of leaving the
+        # session in a failed state that turns the whole request into a 500 and
+        # drops the event for that user.
+        try:
+            async with db.begin_nested():
+                db.add(show)
+                await db.flush()
+        except IntegrityError:
+            winner = (await db.execute(select(Show).where(Show.tmdb_id == series_tmdb_id))).scalar_one_or_none()
+            if winner is None:
+                raise
+            return winner
     return show
 
 
