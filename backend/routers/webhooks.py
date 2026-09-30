@@ -2365,6 +2365,33 @@ async def _backfill_jellyfin_runtimes(
         await db.commit()
 
 
+async def _backfill_kodi_runtime(
+    db: AsyncSession, media: Media, data: dict, tmdb_key: str | None,
+) -> None:
+    """Fill Media.runtime when a Kodi-style webhook event finds it missing,
+    from the event's own total length (exact for the file) or, failing that,
+    TMDB - then commit. The Plex and Jellyfin/Emby paths already do this
+    (_backfill_plex_runtime, _backfill_jellyfin_runtimes); this webhook used
+    the length only for the progress ratio and dropped it, so an episode TMDB
+    has no runtime for yet (a freshly aired one, typically) left the Now
+    Playing bar's live progress frozen at the last reported percentage (#383).
+    """
+    if media.runtime:
+        return
+    minutes: int | None = None
+    total_seconds = data.get("total_seconds")
+    if total_seconds:
+        try:
+            minutes = round(int(total_seconds) / 60) or None
+        except (TypeError, ValueError):
+            minutes = None
+    if not minutes:
+        minutes = await _runtime_from_tmdb(db, media, tmdb_key)
+    if minutes and minutes > 0:
+        media.runtime = minutes
+        await db.commit()
+
+
 async def _backfill_credits_stingers(db: AsyncSession, media: Media, tmdb_key: str | None) -> None:
     """Actively fills in a movie's mid/post-credits-scene flags (#319) when a
     webhook event finds them missing from tmdb_data - a movie enriched before
@@ -3223,6 +3250,7 @@ def parse_kodi_payload(payload: dict) -> dict | None:
         "episode_number": item.get("episode"),
         "progress_percent": progress_percent,
         "progress_seconds": position_seconds,
+        "total_seconds": total_seconds or None,
         "is_paused": notification_type == "pause",
         "ended": ended,
         "session_id": str(item.get("id") or payload.get("session_id") or "0"),
@@ -3439,6 +3467,7 @@ async def _handle_kodi_webhook(request: Request, db: AsyncSession, user: User):
     media = await find_or_create_media_kodi(data, db, api_key=tmdb_key, user_id=user.id)
     if media is None:
         return {"status": "ignored", "reason": "could not identify media"}
+    await _backfill_kodi_runtime(db, media, data, tmdb_key)
 
     session_key = f"kodi:{user.id}:{data['session_id']}"
 
