@@ -158,6 +158,21 @@ async def add_series(
             if series_data.get("id"):
                 return {"status": "already_exists", "series": series_data}
 
+            # Sonarr v3 lookups return languageProfileId 0, which the add call
+            # rejects ("Language profile does not exist"). v4 has no such field.
+            if "languageProfileId" in series_data and not series_data["languageProfileId"]:
+                try:
+                    lp_res = await client.get(
+                        f"{url}/api/v3/languageprofile",
+                        headers={"X-Api-Key": token},
+                    )
+                    lp_res.raise_for_status()
+                    profiles = lp_res.json()
+                    if profiles:
+                        series_data["languageProfileId"] = profiles[0]["id"]
+                except Exception as e:
+                    logger.warning(f"Could not resolve Sonarr language profile: {e}")
+
             # Prepare payload
             payload = {
                 **series_data,
