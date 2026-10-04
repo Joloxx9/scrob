@@ -51,7 +51,7 @@ _CONNECTIONS_SETTINGS_FIELDS = (
     "trakt_client_id", "trakt_client_secret", "trakt_access_token", "trakt_refresh_token", "trakt_token_expires_at",
     "trakt_sync_watched", "trakt_sync_ratings", "trakt_sync_lists", "trakt_watchlist_split",
     "trakt_push_watched", "trakt_push_ratings", "trakt_push_collection", "trakt_push_lists", "trakt_scrobble",
-    "simkl_client_id", "simkl_access_token",
+    "simkl_client_id", "simkl_access_token", "simkl_refresh_token", "simkl_token_expires_at",
     "simkl_sync_watched", "simkl_sync_ratings", "simkl_sync_lists",
     "simkl_push_watched", "simkl_push_ratings", "simkl_scrobble",
     "mdblist_api_key", "mdblist_sync_watched", "mdblist_sync_ratings", "mdblist_sync_watchlist",
