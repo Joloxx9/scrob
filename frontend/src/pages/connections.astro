@@ -3302,6 +3302,9 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
       
       newBtn.addEventListener('click', async () => {
         const action = newBtn.getAttribute('data-action');
+        // The Disconnect buttons share this class for styling but have their own
+        // handlers; with no action there is nothing for this one to do.
+        if (!action) return;
         newBtn.disabled = true;
         const originalHTML = newBtn.innerHTML;
         newBtn.textContent = '...';
