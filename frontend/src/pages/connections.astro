@@ -3656,7 +3656,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
           } else if (action === 'delete_scrobble_connection') {
             const connId = newBtn.getAttribute('data-conn-id');
             const connName = newBtn.getAttribute('data-conn-name');
-            if (!confirm(`Delete scrobble connection "${connName}"? This cannot be undone.`)) return;
+            if (!(await (window as any).showConfirm(`Delete scrobble connection "${connName}"?`, 'This cannot be undone.'))) return;
             const delRes = await fetch(`/api/proxy/auth/scrobble-connections/${connId}`, {
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${token}` },
@@ -3671,7 +3671,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
           } else if (action === 'delete_connection') {
             const connId = newBtn.getAttribute('data-conn-id');
             const connName = newBtn.getAttribute('data-conn-name');
-            if (!confirm(`Delete connection "${connName}"? This cannot be undone.`)) return;
+            if (!(await (window as any).showConfirm(`Delete connection "${connName}"?`, 'This cannot be undone.'))) return;
             const delRes = await fetch(`/api/proxy/auth/connections/${connId}`, {
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${token}` },
@@ -4140,7 +4140,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
 
       if (disconnectBtn) {
         disconnectBtn.onclick = async () => {
-          if (!confirm('Disconnect Trakt? This will remove your Trakt tokens from Scrob.')) return;
+          if (!(await (window as any).showConfirm('Disconnect Trakt?', 'This will remove your Trakt tokens from Scrob.'))) return;
           disconnectBtn.disabled = true;
           disconnectBtn.textContent = 'Disconnecting…';
           try {
@@ -4468,7 +4468,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
 
       if (disconnectBtn) {
         disconnectBtn.onclick = async () => {
-          if (!confirm('Disconnect Simkl? This will remove your Simkl token from Scrob.')) return;
+          if (!(await (window as any).showConfirm('Disconnect Simkl?', 'This will remove your Simkl token from Scrob.'))) return;
           disconnectBtn.disabled = true;
           disconnectBtn.textContent = 'Disconnecting…';
           try {
@@ -4558,7 +4558,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
 
       if (disconnectBtn) {
         disconnectBtn.onclick = async () => {
-          if (!confirm('Disconnect WeTrakr? This will remove your WeTrakr tokens from Scrob.')) return;
+          if (!(await (window as any).showConfirm('Disconnect WeTrakr?', 'This will remove your WeTrakr tokens from Scrob.'))) return;
           disconnectBtn.disabled = true;
           disconnectBtn.textContent = 'Disconnecting…';
           try {
@@ -4582,7 +4582,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
       const disconnectBtn = document.getElementById('mdblist-disconnect-btn');
       if (disconnectBtn) {
         disconnectBtn.onclick = async () => {
-          if (!confirm('Disconnect MDBList? This will remove your MDBList API key from Scrob.')) return;
+          if (!(await (window as any).showConfirm('Disconnect MDBList?', 'This will remove your MDBList API key from Scrob.'))) return;
           disconnectBtn.disabled = true;
           disconnectBtn.textContent = 'Disconnecting…';
           try {
@@ -5498,7 +5498,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
 
     if (regenBtn && keyInput) {
       regenBtn.addEventListener('click', async () => {
-        if (!confirm('Are you sure you want to regenerate your API key? The old key will stop working immediately.')) return;
+        if (!(await (window as any).showConfirm('Regenerate your API key?', 'The old key will stop working immediately.'))) return;
 
         regenBtn.disabled = true;
         const originalText = regenBtn.textContent;
@@ -5993,7 +5993,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
       document.querySelectorAll<HTMLButtonElement>('#season-remaps-list .delete-override-btn').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const overrideId = btn.dataset.overrideId;
-          if (!overrideId || !confirm('Remove this season remap?')) return;
+          if (!overrideId || !(await (window as any).showConfirm('Remove this season remap?', 'This cannot be undone.'))) return;
           btn.disabled = true;
           btn.textContent = 'Removing…';
           try {
