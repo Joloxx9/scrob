@@ -31,6 +31,7 @@ from core.episode_order import (
     ensure_episode_order_mapping_for_season,
     get_episode_order,
     get_mapping_by_tvdb_position,
+    normalize_order_key,
     reconcile_divergent_episode_media,
 )
 from core.rewatch import record_rewatch_progress, get_active_rewatch
@@ -1045,7 +1046,7 @@ async def _translate_plex_tvdb_episode_position(
         return
     try:
         order_pref = await get_episode_order(db, user_id, series_tmdb_id)
-        if not order_pref or order_pref.episode_order != "tvdb":
+        if not order_pref or normalize_order_key(order_pref.episode_order) != "tvdb:official":
             return
         show_row = (
             await db.execute(select(Show).where(Show.tmdb_id == series_tmdb_id))

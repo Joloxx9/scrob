@@ -1295,7 +1295,7 @@ class TranslatePlexTvdbEpisodePositionTests(IsolatedAsyncioTestCase):
         db.execute = AsyncMock(return_value=_ScalarResult(SimpleNamespace(id=9, tmdb_id=100, tvdb_id=42)))
         data = self._data(season_number=2, episode_number=1)
         with (
-            patch("routers.webhooks.get_episode_order", AsyncMock(return_value=SimpleNamespace(episode_order="tvdb"))),
+            patch("routers.webhooks.get_episode_order", AsyncMock(return_value=SimpleNamespace(episode_order="tvdb:official"))),
             patch("routers.webhooks._resolve_tvdb_fallback", AsyncMock(return_value=(42, "tvdb-key", None))),
             patch("routers.webhooks._resolve_tvdb_episode_to_tmdb_position", AsyncMock(return_value=(1, 25))),
         ):
@@ -1307,7 +1307,7 @@ class TranslatePlexTvdbEpisodePositionTests(IsolatedAsyncioTestCase):
         db.execute = AsyncMock(return_value=_ScalarResult(SimpleNamespace(id=9, tmdb_id=100, tvdb_id=42)))
         data = self._data(season_number=0, episode_number=7)
         with (
-            patch("routers.webhooks.get_episode_order", AsyncMock(return_value=SimpleNamespace(episode_order="tvdb"))),
+            patch("routers.webhooks.get_episode_order", AsyncMock(return_value=SimpleNamespace(episode_order="tvdb:official"))),
             patch("routers.webhooks._resolve_tvdb_fallback", AsyncMock(return_value=(42, "tvdb-key", None))),
             patch("routers.webhooks._resolve_tvdb_episode_to_tmdb_position", AsyncMock(return_value=None)),
         ):
