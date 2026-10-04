@@ -17,6 +17,7 @@ from datetime import datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from models.base import CollectionSource, PrivacyLevel
 from models.collection import Collection, CollectionFile
@@ -71,6 +72,8 @@ class ScrobImportData:
     collection_movies: list[dict] = field(default_factory=list)
     collection_episodes: list[dict] = field(default_factory=list)
     watchlist: list[dict] = field(default_factory=list)
+    # Shows the source marked Dropped, shaped {"show": {"ids": {"tmdb": ...}, "title": ...}}.
+    dropped_shows: list[dict] = field(default_factory=list)
     lists: list[dict] = field(default_factory=list)
     list_items: dict[str, list[dict]] = field(default_factory=dict)
     comments: dict[str, list[dict]] = field(default_factory=dict)
@@ -268,7 +271,7 @@ async def apply_scrob_import(
 
     total = 0
     if include_watched:
-        total += len(data.history_movies) + len(data.history_episodes)
+        total += len(data.history_movies) + len(data.history_episodes) + len(data.dropped_shows)
     if include_ratings:
         total += sum(len(v) for v in data.ratings.values())
     if include_collection:
@@ -485,6 +488,33 @@ async def apply_scrob_import(
                     stats["errors"] += 1
             finally:
                 await _tick()
+        await db.commit()
+
+    # ── Dropped shows (#370) ──────────────────────────────────────────
+    # Stored as local Show ids in UserSettings.dropped_shows, so the show row is
+    # created when the import hasn't already brought it in through its history.
+    if include_watched and data.dropped_shows:
+        settings = (
+            await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+        ).scalar_one_or_none()
+        if settings:
+            dropped_ids = set(settings.dropped_shows or [])
+            for entry in data.dropped_shows:
+                try:
+                    show_ref = entry.get("show") or {}
+                    tmdb_id = (show_ref.get("ids") or {}).get("tmdb")
+                    if tmdb_id:
+                        show = await _get_or_create_show(db, int(tmdb_id), show_ref.get("title") or "", api_key)
+                        if show:
+                            dropped_ids.add(show.id)
+                except Exception:
+                    logger.exception("Error importing dropped show")
+                    stats["errors"] += 1
+                finally:
+                    await _tick()
+            if dropped_ids != set(settings.dropped_shows or []):
+                settings.dropped_shows = sorted(dropped_ids)
+                flag_modified(settings, "dropped_shows")
         await db.commit()
 
     # ── Lists (watchlist + custom, matched by name) ───────────────────
