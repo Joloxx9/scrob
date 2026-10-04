@@ -94,6 +94,19 @@ def _history_not_found(payload: object) -> list:
     return []
 
 
+def _count_history_items(items: list) -> int:
+    """Number of individual movies/episodes in a list of `not_found` entries -
+    a show entry stands for every episode nested under its seasons."""
+    total = 0
+    for item in items:
+        seasons = item.get("seasons") if isinstance(item, dict) else None
+        if seasons:
+            total += sum(len(season.get("episodes") or []) or 1 for season in seasons)
+        else:
+            total += 1
+    return total
+
+
 def _raise_if_history_rejected(resp: httpx.Response, *, context: str) -> None:
     """For the single-item history helpers: a non-empty `not_found` means the
     one item we sent was rejected, so surface it instead of logging success."""
@@ -226,14 +239,18 @@ async def add_history_batch(
     access_token: str,
     movies: list[tuple[int, Optional[datetime]]],
     episodes: list[tuple[int, int, int, Optional[datetime]]],
-) -> None:
+) -> int:
     """Add multiple movies and/or episodes to Simkl history in a single API call.
 
     movies: list of (tmdb_id, watched_at)
     episodes: list of (show_tmdb_id, season_number, episode_number, watched_at)
+
+    Returns how many of the submitted items Simkl accepted the request for but
+    could not resolve (reported in `not_found`), so callers can count them as
+    failures instead of successes (#453).
     """
     if not movies and not episodes:
-        return
+        return 0
     body: dict = {}
     if movies:
         body["movies"] = []
@@ -278,6 +295,7 @@ async def add_history_batch(
                 "Simkl /sync/history accepted the batch but could not resolve %d item(s): %s",
                 len(rejected), rejected,
             )
+        return _count_history_items(rejected)
 
 
 async def remove_movie_from_history(client_id: str, access_token: str, tmdb_id: int) -> None:

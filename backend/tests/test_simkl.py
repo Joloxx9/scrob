@@ -115,6 +115,27 @@ class AddToHistoryRejectionTests(unittest.IsolatedAsyncioTestCase):
                 await simkl.add_history_batch("cid", "tok", [], [(95479, 1, 25, None), (95479, 2, 1, None)])
         self.assertTrue(any("could not resolve" in m for m in logs.output))
 
+    async def test_batch_returns_number_of_unresolved_episodes(self):
+        """#453: the push counts these as failures, not successes."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(201, json={
+                "added": {"episodes": 1},
+                "not_found": {"shows": [{"ids": {"tmdb": 46298}, "seasons": [
+                    {"number": 2, "episodes": [{"number": 79}, {"number": 80}, {"number": 81}]},
+                ]}]},
+            })
+
+        with self._patched(handler):
+            rejected = await simkl.add_history_batch("cid", "tok", [], [(46298, 2, 79, None)])
+        self.assertEqual(rejected, 3)
+
+    async def test_batch_returns_zero_when_everything_resolves(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(201, json={"added": {"episodes": 1}, "not_found": {}})
+
+        with self._patched(handler):
+            self.assertEqual(await simkl.add_history_batch("cid", "tok", [], [(1, 1, 1, None)]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

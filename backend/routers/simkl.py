@@ -853,7 +853,11 @@ async def _run_simkl_push(user_id: int, job_id: int) -> None:
                         failed += item_count
                         logger.warning("Simkl push batch failed (%s, %d items): %s", category, item_count, result)
                     else:
-                        succeeded += item_count
+                        # add_history_batch returns how many items Simkl
+                        # accepted the request for but couldn't resolve (#453).
+                        rejected = min(item_count, result) if isinstance(result, int) else 0
+                        failed += rejected
+                        succeeded += item_count - rejected
                 await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(processed_items=succeeded + failed))
                 await db.commit()
                 await _raise_if_cancelled(db, job_id)
