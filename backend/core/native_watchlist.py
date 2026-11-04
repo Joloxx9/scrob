@@ -181,9 +181,8 @@ async def sync_service_watchlist(
     caller's transaction owns them, and it persists result.baseline.
 
     The caller must hold watchlist_lock(user_id)."""
-    result = WatchlistSyncResult()
     if not (pull_enabled or push_enabled):
-        return result
+        return WatchlistSyncResult()
 
     watchlist = await get_watchlist(db, user_id)
     if watchlist is None:
@@ -191,7 +190,37 @@ async def sync_service_watchlist(
         # would read as a local deletion and wipe the service's watchlist.
         baseline = None
         watchlist = await get_or_create_watchlist(db, user_id)
-    local = await load_watchlist_keys(db, watchlist.id)
+    return await sync_list_with_service(
+        db, watchlist.id,
+        service=service, label=f"user {user_id} watchlist",
+        remote=remote, baseline=baseline,
+        pull_enabled=pull_enabled, push_enabled=push_enabled,
+        push_add=push_add, push_remove=push_remove,
+    )
+
+
+async def sync_list_with_service(
+    db: AsyncSession,
+    list_id: int,
+    *,
+    service: str,
+    label: str,
+    remote: Mapping[str, MediaResolver],
+    baseline: Optional[Iterable[str]],
+    pull_enabled: bool,
+    push_enabled: bool,
+    push_add: Optional[RemotePush] = None,
+    push_remove: Optional[RemotePush] = None,
+) -> WatchlistSyncResult:
+    """Reconcile one Scrob list's whole movies and shows with a service's copy
+    of it (`remote`, fetched in full), per core/watchlist_reconcile.py. Season
+    entries on the list are left alone. Local changes are flushed, not
+    committed; the caller persists result.baseline and must hold
+    watchlist_lock for the list's user."""
+    result = WatchlistSyncResult()
+    if not (pull_enabled or push_enabled):
+        return result
+    local = await load_watchlist_keys(db, list_id)
 
     plan = plan_watchlist_reconcile(
         local.keys(), remote.keys(), baseline,
@@ -199,9 +228,9 @@ async def sync_service_watchlist(
     )
     if plan.suppressed:
         logger.warning(
-            "%s watchlist reconcile suppressed for user %s: %s. Not acting on a fetch that may be "
-            "truncated. If the removals are real, remove the items from the watchlist in Scrob.",
-            service, user_id, plan.suppressed_reason,
+            "%s reconcile suppressed for %s: %s. Not acting on a fetch that may be "
+            "truncated. If the removals are real, remove the items from the list in Scrob.",
+            service, label, plan.suppressed_reason,
         )
         result.suppressed = True
         return result
@@ -216,10 +245,10 @@ async def sync_service_watchlist(
                 if media is None:
                     failed_add_local.add(key)
                     continue
-                await add_media_to_watchlist(db, watchlist.id, media.id)
+                await add_media_to_watchlist(db, list_id, media.id)
             result.added += 1
         except Exception as exc:
-            logger.warning("Failed to import %s watchlist item %s: %s", service, key, exc)
+            logger.warning("Failed to import %s item %s into %s: %s", service, key, label, exc)
             failed_add_local.add(key)
 
     if plan.remove_local:
@@ -227,7 +256,7 @@ async def sync_service_watchlist(
         if remove_ids:
             await db.execute(
                 delete(ListItem).where(
-                    ListItem.list_id == watchlist.id,
+                    ListItem.list_id == list_id,
                     ListItem.media_id.in_(remove_ids),
                     ListItem.season_number.is_(None),
                 )

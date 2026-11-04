@@ -537,6 +537,7 @@ The manual **Push** action sends the complete enabled watched-history and rating
 2. Copy the API key from [MDBList Preferences](https://mdblist.com/preferences), paste it into Scrob, and select **Save Changes**.
 3. Choose the data to import under **MDBList → Scrob**, then select **Pull**. MDBList pulls run only when this button is selected.
 4. To send changes back, enable the required **Scrob → MDBList** options. Watched-state and rating edits are pushed as they happen; edits to the [Watchlist](#watchlist) are pushed to the MDBList watchlist.
+5. To keep your own MDBList lists in sync, enable **Your lists** in both sections. Each list you own on MDBList becomes a Scrob list (a list you imported earlier is reused), and every pull or auto sync carries additions and removals across in both directions. Edits to a synced list in Scrob are also sent right away. Dynamic MDBList lists are built by MDBList and can't be edited, so they only pull. MDBList's API can't create lists, so a list made in Scrob stays in Scrob. Lists with more than 5,000 items are skipped.
 
 The manual **Push** action sends the complete enabled watched or ratings snapshot and reconciles the watchlist. MDBList pagination follows `next_cursor` and requests the documented maximum of 1,000 items per page.
 

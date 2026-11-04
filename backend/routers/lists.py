@@ -1267,6 +1267,48 @@ async def _push_watchlist_item_to_mdblist(
         )
 
 
+async def _push_list_item_to_mdblist(
+    db: AsyncSession,
+    lst: ListModel,
+    media: Media,
+    season_number: Optional[int] = None,
+    remove: bool = False,
+) -> None:
+    """Live push of an edit on a list synced with a static MDBList list
+    (routers/mdblist.py _sync_lists). Best-effort: the next MDBList sync
+    reconciles anything that fails here."""
+    if (
+        not lst.mdblist_static
+        or lst.mdblist_synced_keys is None
+        or not (lst.mdblist_slug or "").startswith("list:")
+        or season_number is not None
+        or not media.tmdb_id
+        or media.media_type not in (MediaType.movie, MediaType.series)
+    ):
+        return
+    try:
+        mdblist_list_id = int(lst.mdblist_slug.removeprefix("list:"))
+    except ValueError:
+        return
+
+    settings_result = await db.execute(select(UserSettings).where(UserSettings.user_id == lst.user_id))
+    settings = settings_result.scalar_one_or_none()
+    if not settings or not settings.mdblist_push_lists or not settings.mdblist_api_key:
+        return
+
+    from core import mdblist as mdblist_client
+
+    kind = "movies" if media.media_type == MediaType.movie else "shows"
+    try:
+        await mdblist_client.edit_list_items(
+            settings.mdblist_api_key, mdblist_list_id, "remove" if remove else "add", {kind: [media.tmdb_id]}
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to push list item to MDBList list %s (remove=%s): %s", mdblist_list_id, remove, exc
+        )
+
+
 async def _push_watchlist_item(
     db: AsyncSession,
     user_id: int,
@@ -1396,6 +1438,8 @@ async def add_list_item(
         await _push_watchlist_item(db, current_user.id, media, season_number=body.season_number, remove=False)
     elif lst.trakt_slug:
         await _push_list_item_to_trakt(db, current_user.id, lst.trakt_slug, media, season_number=body.season_number, remove=False)
+    elif lst.mdblist_slug:
+        await _push_list_item_to_mdblist(db, lst, media, season_number=body.season_number, remove=False)
 
     item_result = await db.execute(
         select(ListItem)
@@ -1447,5 +1491,7 @@ async def remove_list_item(
         await _push_watchlist_item(db, current_user.id, media, season_number=season_number, remove=True)
     elif lst and lst.trakt_slug and media:
         await _push_list_item_to_trakt(db, current_user.id, lst.trakt_slug, media, season_number=season_number, remove=True)
+    elif lst and lst.mdblist_slug and media:
+        await _push_list_item_to_mdblist(db, lst, media, season_number=season_number, remove=True)
 
     return {"message": "Item removed"}

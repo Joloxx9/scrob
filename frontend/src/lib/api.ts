@@ -542,6 +542,8 @@ export interface UserSettings {
   mdblist_push_watched: boolean;
   mdblist_push_ratings: boolean;
   mdblist_push_watchlist: boolean;
+  mdblist_sync_lists: boolean;
+  mdblist_push_lists: boolean;
 
   preferences: UserPreferences | null;
   blur_explicit: boolean;

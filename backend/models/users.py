@@ -219,6 +219,10 @@ class UserSettings(Base):
     mdblist_push_watchlist: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Same as trakt_watchlist_synced_keys, for the MDBList watchlist.
     mdblist_watchlist_synced_keys: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    # Two-way sync of the user's own MDBList lists (static ones both ways,
+    # dynamic ones pull-only, since MDBList can't edit them).
+    mdblist_sync_lists: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    mdblist_push_lists: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     mdblist_push_collection: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     mdblist_push_dropped: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     mdblist_scrobble: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

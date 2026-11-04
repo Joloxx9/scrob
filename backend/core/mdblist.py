@@ -257,6 +257,46 @@ async def get_list(api_key: str, list_ref: str) -> dict[str, Any]:
     return metadata
 
 
+async def get_my_lists(api_key: str) -> list[dict[str, Any]]:
+    """The API key owner's own lists (id, name, dynamic, ...)."""
+    data = await _request_json("GET", "/lists/user", api_key)
+    if not isinstance(data, list):
+        raise MDBListAPIError("MDBList GET /lists/user returned an invalid response")
+    return [entry for entry in data if isinstance(entry, dict)]
+
+
+async def edit_list_items(
+    api_key: str,
+    list_id: int,
+    action: str,
+    tmdb_ids: dict[str, list[int]],
+) -> set[tuple[str, int]]:
+    """Add or remove movies/shows on one of the user's static lists, in
+    batches. `tmdb_ids` maps "movies"/"shows" to TMDB ids. Returns the
+    (kind, tmdb_id) pairs that may not have applied.
+
+    The list endpoint reports misses only as a count per kind, so a batch
+    with any miss counts all of that kind in the batch as failed. Retrying
+    them on the next sync is harmless; an item wrongly taken as applied
+    would later read as a removal."""
+    if action not in ("add", "remove"):
+        raise ValueError(f"unknown MDBList list action {action!r}")
+    failed: set[tuple[str, int]] = set()
+    for kind in ("movies", "shows"):
+        ids = list(dict.fromkeys(tmdb_ids.get(kind) or []))
+        for start in range(0, len(ids), PUSH_BATCH_SIZE):
+            batch = ids[start:start + PUSH_BATCH_SIZE]
+            result = await _request(
+                "POST", f"/lists/{list_id}/items/{action}", api_key,
+                payload={kind: [{"tmdb": tmdb_id} for tmdb_id in batch]},
+            )
+            not_found = result.get("not_found")
+            missed = not_found.get(kind) if isinstance(not_found, dict) else None
+            if action == "add" and missed:
+                failed.update((kind, tmdb_id) for tmdb_id in batch)
+    return failed
+
+
 async def get_list_items(
     api_key: str,
     list_ref: str,

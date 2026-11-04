@@ -1016,3 +1016,184 @@ class PushRecoversEpisodeShowContextTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EditListItemsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_counted_miss_fails_that_kind_of_the_batch(self) -> None:
+        calls = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            calls.append((request.url.path, body))
+            missed = {"movies": 1} if "movies" in body else {"shows": 0}
+            return httpx.Response(200, json={"added": {}, "not_found": missed})
+
+        transport = httpx.MockTransport(handler)
+        with patch.object(
+            mdblist.httpx, "AsyncClient",
+            lambda *args, **kwargs: _REAL_ASYNC_CLIENT(*args, transport=transport, **kwargs),
+        ):
+            failed = await mdblist.edit_list_items("key", 7, "add", {"movies": [603, 550], "shows": [1399]})
+
+        self.assertEqual(
+            calls,
+            [
+                ("/lists/7/items/add", {"movies": [{"tmdb": 603}, {"tmdb": 550}]}),
+                ("/lists/7/items/add", {"shows": [{"tmdb": 1399}]}),
+            ],
+        )
+        self.assertEqual(failed, {("movies", 603), ("movies", 550)})
+
+
+class SyncListsTests(unittest.IsolatedAsyncioTestCase):
+    """_sync_lists against real SQLite, with the MDBList client mocked."""
+
+    async def asyncSetUp(self) -> None:
+        from sqlalchemy.dialects.postgresql import JSONB
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.compiler import compiles
+        from sqlalchemy.pool import StaticPool
+
+        import models  # noqa: F401 - registers every table on Base.metadata
+        from models.base import Base
+        from models.users import User, UserSettings
+
+        @compiles(JSONB, "sqlite")
+        def _jsonb_as_json_on_sqlite(type_, compiler, **kw):
+            return "JSON"
+
+        self.engine = create_async_engine(
+            "sqlite+aiosqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+        )
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        self.Session = async_sessionmaker(self.engine, expire_on_commit=False)
+        self.addAsyncCleanup(self.engine.dispose)
+
+        async with self.Session() as db:
+            db.add(User(id=1, email="a@test.local", username="a", api_key="key-a", password_hash="x"))
+            db.add(UserSettings(
+                user_id=1, mdblist_api_key="mdb-key",
+                # SQLite stores these server defaults as the literal text '[]'.
+                next_up_hidden_shows=[], dropped_shows=[], dropped_movies=[],
+            ))
+            for media_id, tmdb_id, kind in ((1, 603, MediaType.movie), (2, 1399, MediaType.series), (3, 550, MediaType.movie)):
+                db.add(Media(id=media_id, tmdb_id=tmdb_id, media_type=kind, title=f"t{tmdb_id}"))
+            await db.commit()
+
+        self.remote_lists = [{"id": 7, "name": "Mine", "dynamic": False}]
+        self.remote_items: dict[int, list[dict]] = {7: []}
+        self.edits: list[tuple[int, str, dict]] = []
+
+        async def _get_list_items(_key, list_ref, max_items):
+            entries = self.remote_items[int(list_ref)]
+            return {
+                "movies": [e for e in entries if e["mediatype"] == "movie"],
+                "shows": [e for e in entries if e["mediatype"] == "show"],
+            }
+
+        async def _edit(_key, list_id, action, ids):
+            self.edits.append((list_id, action, ids))
+            entries = self.remote_items[list_id]
+            for kind, mediatype in (("movies", "movie"), ("shows", "show")):
+                for tmdb_id in ids.get(kind, []):
+                    entry = {"id": tmdb_id, "mediatype": mediatype}
+                    if action == "add" and entry not in entries:
+                        entries.append(entry)
+                    elif action == "remove" and entry in entries:
+                        entries.remove(entry)
+            return set()
+
+        async def _get_media(db, tmdb_id, _title, _api_key):
+            from sqlalchemy import select
+            return (await db.execute(select(Media).where(Media.tmdb_id == tmdb_id))).scalar_one()
+
+        for target, value in (
+            ("routers.mdblist.mdblist_client.get_my_lists", AsyncMock(side_effect=lambda _k: list(self.remote_lists))),
+            ("routers.mdblist.mdblist_client.get_list_items", AsyncMock(side_effect=_get_list_items)),
+            ("routers.mdblist.mdblist_client.edit_list_items", AsyncMock(side_effect=_edit)),
+            ("routers.mdblist._get_or_create_movie_media", _get_media),
+            ("routers.mdblist._get_or_create_series_media", _get_media),
+        ):
+            patcher = patch(target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    async def _sync(self, *, pull=True, push=True) -> dict:
+        from sqlalchemy import select
+        from models.users import UserSettings
+        from routers.mdblist import _sync_lists
+
+        stats = {"lists": 0, "skipped": 0, "errors": 0}
+        async with self.Session() as db:
+            settings = (await db.execute(select(UserSettings))).scalar_one()
+            await _sync_lists(db, 1, settings, None, {}, stats, pull_enabled=pull, push_enabled=push)
+        return stats
+
+    async def _local(self) -> tuple[object, set[str]]:
+        from sqlalchemy import select
+        from core.native_watchlist import load_watchlist_keys
+        from models.lists import List as ListModel
+
+        async with self.Session() as db:
+            lst = (await db.execute(select(ListModel).where(ListModel.mdblist_slug == "list:7"))).scalar_one()
+            return lst, set(await load_watchlist_keys(db, lst.id))
+
+    async def _edit_local(self, media_id: int, *, remove: bool = False) -> None:
+        from sqlalchemy import delete
+        from models.lists import ListItem
+
+        lst, _ = await self._local()
+        async with self.Session() as db:
+            if remove:
+                await db.execute(delete(ListItem).where(ListItem.list_id == lst.id, ListItem.media_id == media_id))
+            else:
+                db.add(ListItem(list_id=lst.id, media_id=media_id))
+            await db.commit()
+
+    async def test_changes_on_either_side_carry_over(self) -> None:
+        self.remote_items[7] = [{"id": 603, "mediatype": "movie"}]
+        stats = await self._sync()
+        lst, keys = await self._local()
+        self.assertEqual(stats["lists"], 1)
+        self.assertEqual((lst.name, lst.mdblist_static), ("Mine", True))
+        self.assertEqual(keys, {"movie:603"})
+        self.assertEqual(lst.mdblist_synced_keys, ["movie:603"])
+
+        # Removed on MDBList, added in Scrob.
+        self.remote_items[7] = []
+        await self._edit_local(2)
+        await self._sync()
+        _, keys = await self._local()
+        self.assertEqual(keys, {"show:1399"})
+        self.assertEqual(self.remote_items[7], [{"id": 1399, "mediatype": "show"}])
+
+        # Removed in Scrob, added on MDBList.
+        await self._edit_local(2, remove=True)
+        self.remote_items[7].append({"id": 550, "mediatype": "movie"})
+        await self._sync()
+        lst, keys = await self._local()
+        self.assertEqual(keys, {"movie:550"})
+        self.assertEqual(self.remote_items[7], [{"id": 550, "mediatype": "movie"}])
+        self.assertEqual(lst.mdblist_synced_keys, ["movie:550"])
+
+    async def test_dynamic_list_is_pull_only(self) -> None:
+        self.remote_lists = [{"id": 7, "name": "Mine", "dynamic": True}]
+        self.remote_items[7] = [{"id": 603, "mediatype": "movie"}]
+        await self._sync()
+        await self._edit_local(2)
+        await self._sync()
+        lst, keys = await self._local()
+        self.assertEqual(self.edits, [])
+        self.assertFalse(lst.mdblist_static)
+        self.assertEqual(keys, {"movie:603", "show:1399"})
+
+    async def test_list_deleted_on_mdblist_is_unlinked_not_emptied(self) -> None:
+        self.remote_items[7] = [{"id": 603, "mediatype": "movie"}]
+        await self._sync()
+        self.remote_lists = []
+        await self._sync()
+        lst, keys = await self._local()
+        self.assertEqual(keys, {"movie:603"})
+        self.assertIsNone(lst.mdblist_synced_keys)
+        self.assertIsNone(lst.mdblist_static)
