@@ -12,7 +12,7 @@ any more. The new baselines start NULL: the first reconcile per service is
 purely additive, so it can't delete anything that was merged.
 
 Revision ID: natwl001
-Revises: wesrc477
+Revises: savedflt
 Create Date: 2026-10-24
 """
 
@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 
 revision = "natwl001"
-down_revision = "wesrc477"
+down_revision = "savedflt"
 branch_labels = None
 depends_on = None
 
