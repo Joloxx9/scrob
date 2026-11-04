@@ -209,7 +209,6 @@ class UserSettings(BaseModel):
     mdblist_push_ratings: Optional[bool] = None
     mdblist_push_watchlist: Optional[bool] = None
     mdblist_sync_lists: Optional[bool] = None
-    mdblist_push_lists: Optional[bool] = None
     mdblist_push_collection: Optional[bool] = None
     mdblist_push_dropped: Optional[bool] = None
     mdblist_scrobble: Optional[bool] = None

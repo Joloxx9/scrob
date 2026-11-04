@@ -1180,9 +1180,9 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                           <input type="checkbox" name="mdblist_sync_dropped" id="mdblist_sync_dropped" checked={settings.mdblist_sync_dropped !== false} class="sync-pref-checkbox w-4 h-4 rounded accent-violet-500 cursor-pointer" />
                           <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">Dropped shows</span>
                         </label>
-                        <label class="flex items-center gap-3 cursor-pointer group" title="Your own MDBList lists become Scrob lists, and items added or removed on MDBList are added or removed here">
+                        <label class="flex items-center gap-3 cursor-pointer group" title="Your MDBList lists, static and dynamic, and lists you imported from MDBList are kept as read-only copies that follow MDBList: items added or removed there are added or removed here, and a copy of a list you delete on MDBList is deleted. Runs on every pull and auto sync.">
                           <input type="checkbox" name="mdblist_sync_lists" id="mdblist_sync_lists" checked={!!settings.mdblist_sync_lists} class="sync-pref-checkbox w-4 h-4 rounded accent-violet-500 cursor-pointer" />
-                          <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">Your lists</span>
+                          <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">Lists</span>
                         </label>
                         <button
                           type="button"
@@ -1208,10 +1208,6 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                             <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">{label}</span>
                           </label>
                         ))}
-                        <label class="flex items-center gap-3 cursor-pointer group" title="Items you add to or remove from a synced list in Scrob are added to or removed from the MDBList list. Sent right away and on every pull; dynamic MDBList lists can't be edited and only pull.">
-                          <input type="checkbox" name="mdblist_push_lists" id="mdblist_push_lists" checked={!!settings.mdblist_push_lists} class="sync-pref-checkbox w-4 h-4 rounded accent-violet-500 cursor-pointer" />
-                          <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">Your lists (on pull)</span>
-                        </label>
                         <label class="flex items-center gap-3 cursor-pointer group">
                           <input type="checkbox" name="mdblist_scrobble" id="mdblist_scrobble" checked={!!settings.mdblist_scrobble} class="sync-pref-checkbox w-4 h-4 rounded accent-violet-500 cursor-pointer" />
                           <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">Now watching</span>
@@ -3560,7 +3556,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
             const mdblistSyncKeys = [
               'mdblist_sync_watched', 'mdblist_sync_ratings', 'mdblist_sync_watchlist', 'mdblist_sync_dropped',
               'mdblist_push_watched', 'mdblist_push_ratings', 'mdblist_push_watchlist', 'mdblist_push_collection', 'mdblist_push_dropped', 'mdblist_scrobble',
-              'mdblist_sync_lists', 'mdblist_push_lists',
+              'mdblist_sync_lists',
             ];
             for (const key of mdblistSyncKeys) {
               const el = document.getElementById(key) as HTMLInputElement | null;
@@ -3989,7 +3985,6 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
               mdblist_sync_watchlist: 'watchlist',
               mdblist_sync_dropped: 'dropped shows',
               mdblist_sync_lists: 'lists',
-              mdblist_push_lists: 'list changes (sent back to MDBList)',
             };
             const selected = Array.from(document.querySelectorAll<HTMLInputElement>('.sync-pref-checkbox'))
               .filter(el => el.checked && labels[el.name])
