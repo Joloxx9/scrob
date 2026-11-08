@@ -1,14 +1,14 @@
 """Add next_up_by_recent_watch to user_settings
 
 Revision ID: 9d4e1a7c2b58
-Revises: natwl001
+Revises: stpull01, natwl001
 Create Date: 2026-10-27
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = '9d4e1a7c2b58'
-down_revision = 'natwl001'
+down_revision = ('stpull01', 'natwl001')
 branch_labels = None
 depends_on = None
 

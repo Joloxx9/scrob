@@ -5,6 +5,10 @@ list is static, whether the MDBList account owns it) and the
 mdblist_sync_lists toggle. The toggle defaults off, so nothing changes until
 a user turns it on.
 
+Fork note: this fork's earlier revisions mdblst01 and mdblst02 already added
+these columns on databases from fork images, so each column is added only
+when it is missing.
+
 Revision ID: mdblmir1
 Revises: uilang
 Create Date: 2026-11-08
@@ -21,11 +25,17 @@ branch_labels = None
 depends_on = None
 
 
+def _add_missing(table: str, column: sa.Column) -> None:
+    existing = {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+    if column.name not in existing:
+        op.add_column(table, column)
+
+
 def upgrade() -> None:
-    op.add_column("lists", sa.Column("mdblist_synced_keys", JSONB(), nullable=True))
-    op.add_column("lists", sa.Column("mdblist_static", sa.Boolean(), nullable=True))
-    op.add_column("lists", sa.Column("mdblist_owned", sa.Boolean(), nullable=True))
-    op.add_column("user_settings", sa.Column("mdblist_sync_lists", sa.Boolean(), nullable=False, server_default="false"))
+    _add_missing("lists", sa.Column("mdblist_synced_keys", JSONB(), nullable=True))
+    _add_missing("lists", sa.Column("mdblist_static", sa.Boolean(), nullable=True))
+    _add_missing("lists", sa.Column("mdblist_owned", sa.Boolean(), nullable=True))
+    _add_missing("user_settings", sa.Column("mdblist_sync_lists", sa.Boolean(), nullable=False, server_default="false"))
 
 
 def downgrade() -> None:
