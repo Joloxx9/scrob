@@ -1,8 +1,12 @@
+import re
 from pydantic import BaseModel, EmailStr, Field, SecretStr, field_validator, model_validator, ConfigDict
 import re
 from typing import Optional
 from datetime import datetime
 from models.base import UserRole, MediaType, PrivacyLevel
+
+# Shape of a BCP 47 language tag ("fr", "pt-BR"); see validate_ui_language.
+UI_LANGUAGE_TAG = re.compile(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*")
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -230,11 +234,30 @@ class UserSettings(BaseModel):
     show_play_button: Optional[bool] = None
     shuffle_next_up: Optional[bool] = None
     minimalist_next_up: Optional[bool] = None
+    next_up_by_recent_watch: Optional[bool] = None
     hide_watched_from_recently_added: Optional[bool] = None
     condense_history_by_show: Optional[bool] = None
     rate_prompt_movies: Optional[bool] = None
     rate_prompt_episodes: Optional[bool] = None
     duplicate_watch_window_minutes: Optional[int] = Field(default=None, ge=0)
+    # NULL inherits server_episode_order, the admin-configured default below
+    # (read-only, computed).
+    default_episode_order: Optional[str] = None
+    server_episode_order: Optional[str] = None
+    ui_language: Optional[str] = None
+
+    @field_validator("ui_language")
+    @classmethod
+    def validate_ui_language(cls, value):
+        # Only the shape of a language tag is checked here: the frontend's
+        # project.inlang/settings.json is the single list of shipped languages,
+        # and the middleware ignores a stored code that isn't one of them (the
+        # browser language applies instead), so adding a language needs no
+        # backend change.
+        # Capped at the column width (user_settings.ui_language is String(10)).
+        if value is not None and (len(value) > 10 or not UI_LANGUAGE_TAG.fullmatch(value)):
+            raise ValueError(f"Unsupported UI language: {value}")
+        return value
 
     @field_validator("rpdb_api_key", mode="before")
     @classmethod
@@ -349,6 +372,7 @@ class MediaServerConnectionUpdate(BaseModel):
     watchlist_all_users: Optional[bool] = None
     watchlist_monitored_users: Optional[list[str]] = None
     plex_sync_watchlist: Optional[bool] = None
+    scrobble_percent: Optional[int] = Field(default=None, ge=1, le=100)
     plex_push_watchlist: Optional[bool] = None
 
 
@@ -356,6 +380,7 @@ class MediaServerConnectionResponse(MediaServerConnectionBase):
     id: int
     user_id: int
     created_at: datetime
+    scrobble_percent: int = 90
 
     @model_validator(mode="after")
     def redact_cloud_credentials(self):
@@ -379,12 +404,14 @@ class ScrobbleConnectionUpdate(BaseModel):
     sync_collection: Optional[bool] = None
     sync_watched: Optional[bool] = None
     sync_playback: Optional[bool] = None
+    scrobble_percent: Optional[int] = Field(default=None, ge=1, le=100)
 
 
 class ScrobbleConnectionResponse(ScrobbleConnectionCreate):
     id: int
     user_id: int
     created_at: datetime
+    scrobble_percent: int = 90
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -525,6 +552,7 @@ class GlobalSettings(BaseModel):
     sonarr_require_approval     : bool = False
     radarr_customize_on_add     : bool = False
     sonarr_customize_on_add     : bool = False
+    default_episode_order       : Optional[str] = None
     image_cache_enabled         : bool = False
     image_cache_limit_gb        : Optional[float] = None
     enable_logged_out_navigation: bool = False

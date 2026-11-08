@@ -1,25 +1,23 @@
-"""keep the revision id earlier fork images recorded (no-op after natwl001)
+"""fork revision kept for databases that recorded it
+
+This fork's images recorded this revision id. It stays so that a database
+stamped with it still resolves. It never changed the schema. No-op in both
+directions.
 
 Revision ID: mrgnwsf1
 Revises: natwl001
-Create Date: 2026-11-04 11:00:00.000000
-
+Create Date: 2026-11-08
 """
-from typing import Sequence, Union
 
-
-# revision identifiers, used by Alembic.
-revision: str = 'mrgnwsf1'
-down_revision: Union[str, Sequence[str], None] = 'natwl001'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision = "mrgnwsf1"
+down_revision = "natwl001"
+branch_labels = None
+depends_on = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
     pass
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
     pass

@@ -126,6 +126,66 @@ class CircuitBreakerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tmdb._breaker_blocked())
 
 
+class StaleConnectionRetryTests(unittest.IsolatedAsyncioTestCase):
+    """A reused keep-alive connection can be reset under us; that must be
+    retried on a fresh connection, not surface as an error."""
+
+    def setUp(self) -> None:
+        tmdb._cache._store.clear()
+        tmdb._breaker_fail_count = 0
+        tmdb._breaker_open_until = 0.0
+
+    tearDown = setUp
+
+    async def test_a_reset_connection_is_retried_and_then_succeeds(self) -> None:
+        calls: list[int] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(1)
+            if len(calls) == 1:
+                raise httpx.ReadError("connection reset by peer", request=request)
+            return httpx.Response(200, json={"id": 1})
+
+        transport = httpx.MockTransport(handler)
+        with patch.object(
+            tmdb.httpx, "AsyncClient", side_effect=lambda **kw: _REAL_ASYNC_CLIENT(transport=transport, **kw),
+        ), patch.object(tmdb.asyncio, "sleep", new_callable=AsyncMock):
+            result = await tmdb.get_show(1, api_key="k", cache_ttl=None)
+
+        self.assertEqual(result, {"id": 1})
+        self.assertEqual(len(calls), 2)
+
+
+class SharedClientTests(unittest.IsolatedAsyncioTestCase):
+    """Inside the app lifespan every call reuses one pooled client (and its
+    keep-alive connections); after shutdown _get falls back to a client per call."""
+
+    async def asyncTearDown(self) -> None:
+        await tmdb.close_client()
+
+    async def test_calls_share_the_lifespan_client_then_fall_back_after_close(self) -> None:
+        requests: list[int] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(1)
+            return httpx.Response(200, json={"id": 1})
+
+        transport = httpx.MockTransport(handler)
+        with patch.object(
+            tmdb.httpx, "AsyncClient", side_effect=lambda **kw: _REAL_ASYNC_CLIENT(transport=transport, **kw),
+        ) as client_cls:
+            tmdb.init_client()
+            await tmdb.get_show(1, api_key="k", cache_ttl=None)
+            await tmdb.get_show(2, api_key="k", cache_ttl=None)
+            self.assertEqual(client_cls.call_count, 1)
+
+            await tmdb.close_client()
+            await tmdb.get_show(3, api_key="k", cache_ttl=None)
+            self.assertEqual(client_cls.call_count, 2)
+
+        self.assertEqual(len(requests), 3)
+
+
 class DiscoverGenreIdsTests(unittest.IsolatedAsyncioTestCase):
     """Regression tests for multi-genre selection on Explore Movies/Shows:
     TMDB's discover endpoints OR multiple genres together via a "|"-joined

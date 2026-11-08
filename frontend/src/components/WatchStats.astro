@@ -1,0 +1,45 @@
+---
+import { formatWatchedDate } from "../lib/media-format";
+import { m } from "../paraglide/messages.js";
+import { formatNumber } from "../lib/format";
+
+interface Props {
+  plays?: number;
+  watchTimeMinutes?: number;
+  lastWatchedAt?: string | null;
+  timeZone?: string;
+}
+
+const { plays = 0, watchTimeMinutes = 0, lastWatchedAt, timeZone } = Astro.props;
+const lastWatchedDate = formatWatchedDate(lastWatchedAt, timeZone);
+function formatMinutes(mins: number) {
+  const h = Math.round(mins / 60);
+  return h >= 48
+    ? m.watch_stats_days({ days: formatNumber(mins / 60 / 24, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })
+    : m.duration_hours({ hours: h });
+}
+
+const watchTimeLabel = watchTimeMinutes > 0 && watchTimeMinutes < 30
+  ? m.watch_stats_less_than_hour()
+  : formatMinutes(watchTimeMinutes);
+---
+
+{(plays > 0 || watchTimeMinutes > 0 || lastWatchedDate) && (
+  <div class="mb-6 flex flex-wrap items-center gap-2" role="group" aria-label={m.watch_stats_group()}>
+    {plays > 0 && (
+      <span class="inline-flex items-center px-3 py-1.5 bg-zinc-900/70 border border-zinc-800 text-zinc-300 text-xs rounded-lg font-bold">
+        {plays === 1 ? m.watch_stats_play_one({ count: plays }) : m.watch_stats_play_other({ count: plays })}
+      </span>
+    )}
+    {watchTimeMinutes > 0 && (
+      <span class="inline-flex items-center px-3 py-1.5 bg-zinc-900/70 border border-zinc-800 text-zinc-300 text-xs rounded-lg font-bold">
+        {m.watch_stats_watched({ time: watchTimeLabel })}
+      </span>
+    )}
+    {lastWatchedDate && (
+      <span class="inline-flex items-center px-3 py-1.5 bg-zinc-900/70 border border-zinc-800 text-zinc-300 text-xs rounded-lg font-bold">
+        {m.watch_stats_last_watched({ date: lastWatchedDate })}
+      </span>
+    )}
+  </div>
+)}

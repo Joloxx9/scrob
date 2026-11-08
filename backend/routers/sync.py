@@ -28,6 +28,7 @@ from dateutil import parser
 from models.base import MediaType, CollectionSource
 from models.global_settings import GlobalSettings
 from core import arvio, jellyfin, emby, plex, nuvio, stremio, tmdb
+from core.scrobble_threshold import reached_threshold, scrobble_threshold_for
 from core.jellyfin import get_jellyfin_tmdb_id
 import core.trakt as trakt_client
 from core.enrichment import enrich_media, is_unmapped_tvdb_episode, create_media_safely, enrich_media_safely, apply_media_change_safely, enrich_episode_from_tvdb
@@ -41,6 +42,7 @@ from core.image_cache import pre_cache_all_collected_bg
 from core.translations import get_user_metadata_language
 from core.rewatch import record_rewatch_progress, get_active_rewatches_for_shows
 from core.push_state import MISS, RATING, WATCHED, PushState, plan_push, season_miss_key, season_rating_key
+from core.plex_progress import ProgressPushResult, push_progress_to_plex
 from core.watch_dedup import get_dedup_window_minutes, find_duplicate_watch_event, is_duplicate_watch_time
 from core.native_watchlist import get_or_create_watchlist, get_watchlist, load_watchlist_keys, watchlist_lock
 from core.watchlist_reconcile import compute_new_baseline, compute_pull_only_baseline, media_key, plan_watchlist_reconcile
@@ -358,6 +360,14 @@ def extract_jellyfin_quality(item: dict) -> dict:
     quality = extract_quality(item.get("MediaStreams", []))
     quality["file_path"] = item.get("Path")
     return quality
+
+
+def _apply_default_episode_order_bg(user_id: int, new_media_ids: set[int]) -> None:
+    """Put the shows this sync just added on the user's default episode order.
+    A no-op unless that default is a non-aired order - see routers/shows.py."""
+    from routers.shows import apply_default_episode_order_to_new_shows
+
+    asyncio.create_task(apply_default_episode_order_to_new_shows(user_id, set(new_media_ids)))
 
 
 async def sync_shows_batch(
@@ -1892,6 +1902,14 @@ def _expand_multi_episode_items(items: list, media_type: MediaType, source: Coll
     return expanded
 
 
+def _sync_row_count(items: list, media_type: MediaType, source: CollectionSource) -> int:
+    """Number of rows sync_items will process - and count into the job's
+    processed_items - for these items. Can be larger than len(items) when combined
+    Jellyfin/Emby files get expanded, so pull jobs must size their total_items
+    with this, or a library with combined files finishes above 100%."""
+    return len(_expand_multi_episode_items(items, media_type, source))
+
+
 def _episode_tvdb_id(item: dict, source: CollectionSource) -> int | None:
     """Return an episode-level TVDB id that is safe for canonicalisation.
 
@@ -2114,15 +2132,9 @@ async def sync_items(
     items = _expand_multi_episode_items(items, media_type, source)
     print(f"  Syncing {len(items)} {media_type.value}s from {source.value}...")
 
-    # Fix #497: multi-episode files have been expanded; update total_items to match
-    # the actual count sync_items will process, so the progress counter ends at 100%.
-    if job_id and source in (CollectionSource.jellyfin, CollectionSource.emby):
-        await db.execute(
-            update(SyncJob)
-            .where(SyncJob.id == job_id)
-            .values(total_items=len(items))
-        )
-        await db.commit()
+    # The caller sizes the job's total_items (see _sync_row_count for combined
+    # Jellyfin/Emby files, #497); processed_items accumulates across calls, so
+    # this must not overwrite the total with this call's row count.
 
     # ── Phase 1: Pre-load existing data (replaces all N+1 queries) ────────────
 
@@ -2953,7 +2965,11 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                     unmatched_series_ids = {str(s.get("Id")) for s in shows if str(s.get("Id")) not in show_map}
                     unmatched_series_episodes = [e for e in items if str(e.get("SeriesId")) in unmatched_series_ids]
 
-                    total_discovered = total_discovered - len(series_tmdb_map) + len(filtered_episodes) + len(unmatched_series_episodes)
+                    total_discovered = (
+                        total_discovered - len(series_tmdb_map)
+                        + _sync_row_count(filtered_episodes, MediaType.episode, CollectionSource.jellyfin)
+                        + _sync_row_count(unmatched_series_episodes, MediaType.episode, CollectionSource.jellyfin)
+                    )
                     await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(total_items=total_discovered, current_step="Pulling episodes"))
                     await db.commit()
 
@@ -2998,6 +3014,7 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
             await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.completed, stats=stats, warnings=all_warnings or None, updated_at=func.now()))
             await db.commit()
             asyncio.create_task(pre_cache_all_collected_bg())
+            _apply_default_episode_order_bg(user_id, _new_collected)
         except SyncCancelled:
             print(f"Jellyfin sync job {job_id} cancelled")
             await db.rollback()
@@ -3168,7 +3185,11 @@ async def _run_emby_sync(user_id: int, job_id: int, movie_limit: int, show_limit
                     unmatched_series_ids = {str(s.get("Id")) for s in shows if str(s.get("Id")) not in show_map}
                     unmatched_series_episodes = [e for e in items if str(e.get("SeriesId")) in unmatched_series_ids]
 
-                    total_discovered = total_discovered - len(series_tmdb_map) + len(filtered_episodes) + len(unmatched_series_episodes)
+                    total_discovered = (
+                        total_discovered - len(series_tmdb_map)
+                        + _sync_row_count(filtered_episodes, MediaType.episode, CollectionSource.emby)
+                        + _sync_row_count(unmatched_series_episodes, MediaType.episode, CollectionSource.emby)
+                    )
                     await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(total_items=total_discovered, current_step="Pulling episodes"))
                     await db.commit()
 
@@ -3213,6 +3234,7 @@ async def _run_emby_sync(user_id: int, job_id: int, movie_limit: int, show_limit
             await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.completed, stats=stats, warnings=all_warnings or None, updated_at=func.now()))
             await db.commit()
             asyncio.create_task(pre_cache_all_collected_bg())
+            _apply_default_episode_order_bg(user_id, _new_collected)
         except SyncCancelled:
             print(f"Emby sync job {job_id} cancelled")
             await db.rollback()
@@ -4348,6 +4370,7 @@ async def _run_plex_sync(user_id: int, job_id: int, movie_limit: int, show_limit
             await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.completed, stats=stats, warnings=all_warnings or None, updated_at=func.now()))
             await db.commit()
             asyncio.create_task(pre_cache_all_collected_bg())
+            _apply_default_episode_order_bg(user_id, _new_collected)
         except SyncCancelled:
             print(f"Plex sync job {job_id} cancelled")
             await db.rollback()
@@ -4709,7 +4732,7 @@ async def _apply_nuvio_progress(
             continue
         progress_percent = min(1.0, position_ms / duration_ms)
         progress = existing.get(media.id)
-        if 0.05 <= progress_percent < 0.90:
+        if progress_percent >= 0.05:
             updated_at = _nuvio_datetime(row.get("last_watched")) or utcnow()
             if progress:
                 progress.progress_percent = progress_percent
@@ -4802,7 +4825,18 @@ async def _run_nuvio_sync(
 
             library_records = data["library"] if conn.sync_collection else []
             watched_records = data["watched"] if conn.sync_watched else []
-            progress_records = data["progress"] if conn.sync_playback else []
+            scrobble_threshold = scrobble_threshold_for(conn)
+            progress_records = []
+            finished_progress = []
+            for row in data["progress"] if conn.sync_playback else []:
+                position = int(row.get("position") or 0)
+                duration = int(row.get("duration") or 0)
+                if reached_threshold(position, duration, scrobble_threshold):
+                    finished_progress.append(row)
+                else:
+                    progress_records.append(row)
+            if conn.sync_watched:
+                watched_records = [*watched_records, *finished_progress]
             logger.info(
                 "Nuvio profile %s (index #%s): pulled %s library, %s watched, "
                 "and %s progress records; enabled for this sync: %s library, "
@@ -4983,6 +5017,7 @@ async def _run_nuvio_sync(
             )
             await db.commit()
             asyncio.create_task(pre_cache_all_collected_bg())
+            _apply_default_episode_order_bg(user_id, new_collected_ids)
             logger.info("Nuvio sync job %s completed. Stats: %s", job_id, stats)
         except SyncCancelled:
             logger.info("Nuvio sync job %s cancelled", job_id)
@@ -5077,8 +5112,65 @@ def _stremio_series_imdb_id(item: dict) -> str | None:
     return None
 
 
+# An item Stremio synced that Scrob can't match (no IMDb id, a show TMDB doesn't
+# know) is retried on the next syncs in case it was a transient failure; after
+# this many failed attempts it is left alone until Stremio modifies it again.
+STREMIO_MAX_PULL_ATTEMPTS = 5
+
+
+def _stremio_pending_attempts(stored) -> dict[str, int]:
+    """Failed-attempt count per content id, from the stored column. A bare list
+    (the first shape this column had) counts as one failed attempt each."""
+    if isinstance(stored, dict):
+        attempts: dict[str, int] = {}
+        for content_id, count in stored.items():
+            try:
+                attempts[str(content_id)] = int(count)
+            except (TypeError, ValueError):
+                attempts[str(content_id)] = 1
+        return attempts
+    if isinstance(stored, list):
+        return {str(content_id): 1 for content_id in stored}
+    return {}
+
+
+def _stremio_next_pending(
+    failed_ids: set[str],
+    previous: dict[str, int],
+) -> tuple[dict[str, int], set[str]]:
+    """Carry the attempt counts forward: (ids to retry next sync, ids that just
+    ran out of attempts). Ids that resolved this time are simply not in
+    failed_ids, so they drop out."""
+    pending: dict[str, int] = {}
+    expired: set[str] = set()
+    for content_id in failed_ids:
+        attempts = previous.get(content_id, 0) + 1
+        if attempts >= STREMIO_MAX_PULL_ATTEMPTS:
+            expired.add(content_id)
+        else:
+            pending[content_id] = attempts
+    return pending, expired
+
+
+def _stremio_unresolved_ids(
+    records: list[dict],
+    tmdb_ids: dict[str, int],
+    show_map: dict[str, int],
+) -> set[str]:
+    unresolved: set[str] = set()
+    for record in records:
+        content_id = str(record.get("content_id") or "")
+        if content_id not in tmdb_ids:
+            unresolved.add(content_id)
+        elif record.get("content_type") == "series" and content_id not in show_map:
+            unresolved.add(content_id)
+    return unresolved
+
+
 async def _stremio_records(
     items: list[dict],
+    scrobble_threshold: float = 0.90,
+    failed_ids: set[str] | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], set[str]]:
     records = [
         item
@@ -5105,7 +5197,17 @@ async def _stremio_records(
         for item in series_needing_meta
         if (imdb_id := _stremio_series_imdb_id(item)) is not None
     }
+    for item in series_needing_meta:
+        if str(item["_id"]) not in series_imdb_ids:
+            logger.warning(
+                "Stremio series %s has no IMDb id, so its watch state was skipped",
+                item["_id"],
+            )
     metas = await _stremio_series_metadata(set(series_imdb_ids.values()))
+    if failed_ids is not None:
+        failed_ids.update(
+            content_id for content_id, imdb_id in series_imdb_ids.items() if imdb_id not in metas
+        )
 
     library_records: list[dict] = []
     watched_records: list[dict] = []
@@ -5129,14 +5231,15 @@ async def _stremio_records(
                 times_watched = int(state.get("timesWatched") or 0)
             except (TypeError, ValueError):
                 times_watched = 0
-            if times_watched > 0:
-                watched_records.append({**base, "watched_at": last_watched})
             try:
                 position = int(state.get("timeOffset") or 0)
                 duration = int(state.get("duration") or 0)
             except (TypeError, ValueError):
                 position = duration = 0
-            if position > 0 and duration > 0:
+            scrobbled = duration > 0 and position / duration >= scrobble_threshold
+            if times_watched > 0 or scrobbled:
+                watched_records.append({**base, "watched_at": last_watched})
+            if position > 0 and duration > 0 and not scrobbled:
                 progress_records.append(
                     {
                         **base,
@@ -5147,7 +5250,7 @@ async def _stremio_records(
                 )
             continue
 
-        videos = _stremio_sorted_videos(metas.get(series_imdb_ids.get(content_id, content_id), {}))
+        videos = _stremio_videos(metas.get(series_imdb_ids.get(content_id, content_id), {}))
         video_ids = [str(video["id"]) for video in videos]
         watched_ids = stremio.decode_watched_bitfield(state.get("watched"), video_ids)
         for video in videos:
@@ -5181,17 +5284,29 @@ async def _stremio_records(
             position = duration = 0
         if current_parts and position > 0 and duration > 0:
             season, episode = current_parts
-            progress_records.append(
-                {
-                    **base,
-                    "title": str(current_video.get("name") or title),
-                    "season": season,
-                    "episode": episode,
-                    "position": position,
-                    "duration": duration,
-                    "last_watched": last_watched,
-                }
-            )
+            if position / duration >= scrobble_threshold:
+                if current_video_id not in watched_ids:
+                    watched_records.append(
+                        {
+                            **base,
+                            "title": str(current_video.get("name") or title),
+                            "season": season,
+                            "episode": episode,
+                            "watched_at": last_watched,
+                        }
+                    )
+            else:
+                progress_records.append(
+                    {
+                        **base,
+                        "title": str(current_video.get("name") or title),
+                        "season": season,
+                        "episode": episode,
+                        "position": position,
+                        "duration": duration,
+                        "last_watched": last_watched,
+                    }
+                )
     return library_records, watched_records, progress_records, removed_ids
 
 
@@ -5261,6 +5376,10 @@ async def _pull_stremio_items(
         modified_at = _nuvio_datetime(_stremio_epoch_ms(row[1]))
         if item_id and modified_at is not None and modified_at >= cutoff:
             changed_ids.append(item_id)
+    pending_ids = list(_stremio_pending_attempts(conn.stremio_pending_pull_ids))
+    if pending_ids:
+        logger.info("Retrying %d Stremio items that failed in the previous sync", len(pending_ids))
+    changed_ids = list(dict.fromkeys([*changed_ids, *pending_ids]))
     return await stremio.datastore_get(conn.token, ids=changed_ids), False, started_at
 
 
@@ -5319,7 +5438,12 @@ async def _run_stremio_sync(
                 conn,
                 full_resync=full_resync,
             )
-            library_records, watched_records, progress_records, removed_ids = await _stremio_records(items)
+            lookup_failures: set[str] = set()
+            library_records, watched_records, progress_records, removed_ids = await _stremio_records(
+                items,
+                scrobble_threshold=scrobble_threshold_for(conn),
+                failed_ids=lookup_failures,
+            )
             if not conn.sync_collection:
                 library_records = []
                 removed_ids = set()
@@ -5392,6 +5516,26 @@ async def _run_stremio_sync(
                 if series_tmdb_map
                 else ({}, {})
             )
+            pending_ids, expired_ids = _stremio_next_pending(
+                lookup_failures | _stremio_unresolved_ids(all_records, tmdb_ids, show_map),
+                _stremio_pending_attempts(conn.stremio_pending_pull_ids),
+            )
+            if pending_ids:
+                logger.warning(
+                    "Stremio sync job %s: %d items could not be matched and will be retried next sync: %s",
+                    job_id,
+                    len(pending_ids),
+                    ", ".join(sorted(pending_ids)[:20]),
+                )
+            if expired_ids:
+                logger.warning(
+                    "Stremio sync job %s: giving up on %d items after %d failed attempts "
+                    "(they are retried again if Stremio modifies them): %s",
+                    job_id,
+                    len(expired_ids),
+                    STREMIO_MAX_PULL_ATTEMPTS,
+                    ", ".join(sorted(expired_ids)[:20]),
+                )
             all_entries = [*normalized_library, *normalized_watched, *normalized_progress]
             await db.execute(
                 update(SyncJob).where(SyncJob.id == job_id).values(total_items=len(all_entries))
@@ -5471,6 +5615,7 @@ async def _run_stremio_sync(
             # other connections; users push explicitly per-service (the "Push" buttons).
             conn.stremio_pull_cursor_at = pull_started_at
             conn.stremio_full_sync_done = True
+            conn.stremio_pending_pull_ids = pending_ids
             warnings = await _stamp_matched_show_warnings(db, user_id, warnings)
             await db.execute(
                 update(SyncJob)
@@ -5484,6 +5629,7 @@ async def _run_stremio_sync(
             )
             await db.commit()
             asyncio.create_task(pre_cache_all_collected_bg())
+            _apply_default_episode_order_bg(user_id, new_collected_ids)
         except Exception as exc:
             logger.exception("Stremio sync job %s failed", job_id)
             await db.rollback()
@@ -6308,20 +6454,14 @@ def _stremio_default_state() -> dict:
     }
 
 
-def _stremio_sorted_videos(meta: dict) -> list[dict]:
-    def sort_key(video: dict) -> tuple:
-        parts = _stremio_video_parts(video)
-        season, episode = parts if parts is not None else (-1, -1)
-        return season, episode, str(video.get("released") or "")
-
-    return sorted(
-        [
-            video
-            for video in (meta.get("videos") or [])
-            if isinstance(video, dict) and video.get("id")
-        ],
-        key=sort_key,
-    )
+def _stremio_videos(meta: dict) -> list[dict]:
+    # Watched bitfields index the videos in the order Cinemeta delivers them, which
+    # differs per show (specials can come first, in the middle or last): never sort.
+    return [
+        video
+        for video in (meta.get("videos") or [])
+        if isinstance(video, dict) and video.get("id")
+    ]
 
 
 def _stremio_new_library_item(
@@ -6582,7 +6722,7 @@ async def _push_stremio_connection(
                 if is_watched and watched_at is not None:
                     state["lastWatched"] = watched_at
             else:
-                videos = _stremio_sorted_videos(series_meta.get(content_id, {}))
+                videos = _stremio_videos(series_meta.get(content_id, {}))
                 video_ids = [str(video["id"]) for video in videos]
                 watched_ids = stremio.decode_watched_bitfield(
                     state.get("watched"),
@@ -6626,7 +6766,7 @@ async def _push_stremio_connection(
             if record.get("content_type") == "movie":
                 state["video_id"] = content_id
             else:
-                videos = _stremio_sorted_videos(series_meta.get(content_id, {}))
+                videos = _stremio_videos(series_meta.get(content_id, {}))
                 matching_video = next(
                     (
                         video
@@ -6713,6 +6853,19 @@ def push_failed_warning(media_id: int, media: Media | None, action: str, reason:
         "series_name": series_name if is_episode else None,
         "action": action,
         "reason": reason,
+    }
+
+
+def _progress_push_stats(result: ProgressPushResult | None) -> dict:
+    """The playback-progress part of a push job's stats, empty when the job
+    pushed no progress. "progress" matches the Nuvio push's own key."""
+    if result is None:
+        return {}
+    return {
+        "progress": result.pushed,
+        "progress_unchanged": result.unchanged,
+        "progress_missing": result.missing,
+        "progress_failed": result.failed,
     }
 
 
@@ -6918,6 +7071,21 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
                 wl_tmdb_key = await _get_effective_tmdb_key(db, wl_settings_result.scalar_one_or_none())
                 await _reconcile_plex_watchlist(user_id, conn.id, wl_tmdb_key)
 
+            # Resume points go first and on their own: they are not part of
+            # the watched/ratings item count below, and a connection that only
+            # pushes playback progress must not stop at "nothing to push".
+            progress_result: ProgressPushResult | None = None
+            if conn.type == "plex" and conn.push_playback:
+                await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(current_step="Pushing playback progress"))
+                await db.commit()
+                progress_result = await push_progress_to_plex(db, conn, user_id, push_state)
+                print(
+                    f"Full push ({push_mode}) for connection {connection_id}: playback progress "
+                    f"{progress_result.pushed} pushed, {progress_result.unchanged} already current, "
+                    f"{progress_result.missing} not on the server, {progress_result.failed} failed"
+                )
+            progress_stats = _progress_push_stats(progress_result)
+
             watched_ids: set[int] = set()
             ratings_map: RatingChanges = {}
 
@@ -6984,7 +7152,12 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
 
             all_media_ids = watched_ids | {media_id for media_id, _ in ratings_map}
             if not all_media_ids:
-                await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.completed, total_items=0, processed_items=0))
+                if progress_result is not None:
+                    await _save_push_state(db, push_state, connection_id)
+                await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(
+                    status=SyncStatus.completed, total_items=0, processed_items=0,
+                    **({"stats": {"succeeded": 0, "failed": 0, "mode": push_mode, **progress_stats}} if progress_stats else {}),
+                ))
                 await db.commit()
                 print(f"Full push for connection {connection_id}: nothing to push")
                 return
@@ -7169,9 +7342,11 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
             watched_group_row_count = sum(len(mids) for mids in watched_sid_to_mids.values())
             total = len(push_items) + len(lookup_items) + watched_group_row_count + len(watched_lookup_mids)
             if total == 0:
+                if progress_result is not None:
+                    await _save_push_state(db, push_state, connection_id)
                 await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(
                     status=SyncStatus.completed, total_items=0, processed_items=0,
-                    stats={"succeeded": 0, "failed": 0, "skipped": push_state.skipped, "mode": push_mode},
+                    stats={"succeeded": 0, "failed": 0, "skipped": push_state.skipped, "mode": push_mode, **progress_stats},
                 ))
                 await db.commit()
                 print(f"Full push ({push_mode}) for connection {connection_id}: nothing to send"
@@ -7562,7 +7737,7 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int, incremen
             await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(
                 status=SyncStatus.completed,
                 processed_items=total,
-                stats={"succeeded": succeeded, "failed": failed_count, "skipped": push_state.skipped, "mode": push_mode},
+                stats={"succeeded": succeeded, "failed": failed_count, "skipped": push_state.skipped, "mode": push_mode, **progress_stats},
                 warnings=lookup_warnings or None,
             ))
             await db.commit()

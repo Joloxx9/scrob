@@ -557,6 +557,12 @@ class ExpandMultiEpisodeItemsTests(unittest.TestCase):
 
         self.assertEqual(expanded, [item])
 
+    def test_row_count_counts_one_row_per_expanded_episode(self):
+        items = [{"Id": "file-1", "IndexNumber": 1, "IndexNumberEnd": 3}, {"Id": "file-2", "IndexNumber": 4}]
+
+        self.assertEqual(sync._sync_row_count(items, sync.MediaType.episode, sync.CollectionSource.emby), 4)
+        self.assertEqual(sync._sync_row_count(items, sync.MediaType.episode, sync.CollectionSource.plex), 2)
+
     def test_plex_source_is_never_expanded(self):
         # Scoped to Jellyfin/Emby only - Plex doesn't expose this field at all.
         item = {"ratingKey": "1", "index": 1, "IndexNumberEnd": 2}
@@ -1182,6 +1188,110 @@ class SyncItemsPushBackTests(_PartialWatchDB):
             watched_in_scrob=True, user_data={"Played": False}, file_known=True,
         )
         self.assertEqual(push_back, {})
+
+
+class SyncItemsSkippedItemProgressTests(_PartialWatchDB):
+    """An unmatched item that can't be stored as a stub is skipped. If it was the
+    last one of a batch, the skip jumped over the batch bookkeeping and that
+    whole batch never reached processed_items - the job ended below 100%."""
+
+    async def test_skipped_item_at_a_batch_boundary_still_counts_the_batch(self):
+        from models.collection import CollectionSource
+        from models.media import MediaType
+        from models.sync import SyncJob
+
+        # No TMDB id and no name: unmatched, and too little to store a stub.
+        items = [{"Id": f"jf-{n}", "ProviderIds": {}} for n in range(3)]
+        async with self.Session() as db:
+            job = SyncJob(user_id=1, source=CollectionSource.jellyfin, total_items=len(items), processed_items=0)
+            db.add(job)
+            await db.commit()
+
+            stats = {"movies": 0, "episodes": 0, "skipped": 0, "errors": 0}
+            with patch.object(sync, "BATCH_SIZE", 2):
+                await sync.sync_items(
+                    items=items,
+                    media_type=MediaType.movie,
+                    source=CollectionSource.jellyfin,
+                    db=db,
+                    stats=stats,
+                    user_id=1,
+                    job_id=job.id,
+                    connection_id=7,
+                )
+
+            await db.refresh(job)
+            self.assertEqual(stats["skipped"], 3)
+            self.assertEqual(stats["errors"], 0)
+            self.assertEqual((job.processed_items, job.total_items), (3, 3))
+
+
+class SyncRowCountMatchesProcessedTests(_PartialWatchDB):
+    """Jellyfin/Emby pulls size the job's total_items with _sync_row_count while
+    sync_items counts processed_items per expanded row (#138). Sized by
+    len(items) instead, a library with combined files finished above 100%
+    (e.g. 49052 / 48532)."""
+
+    async def test_job_sized_by_row_count_ends_at_its_total(self):
+        from models.collection import CollectionSource
+        from models.media import MediaType
+        from models.sync import SyncJob
+
+        items = [
+            {"Id": "file-1", "SeriesId": "s-1", "ParentIndexNumber": 1, "IndexNumber": 1, "IndexNumberEnd": 3},
+            {"Id": "file-2", "SeriesId": "s-1", "ParentIndexNumber": 1, "IndexNumber": 4},
+        ]
+        total = sync._sync_row_count(items, MediaType.episode, CollectionSource.jellyfin)
+        async with self.Session() as db:
+            job = SyncJob(user_id=1, source=CollectionSource.jellyfin, total_items=total, processed_items=0)
+            db.add(job)
+            await db.commit()
+
+            await sync.sync_items(
+                items=items,
+                media_type=MediaType.episode,
+                source=CollectionSource.jellyfin,
+                db=db,
+                stats={"movies": 0, "episodes": 0, "skipped": 0, "errors": 0},
+                user_id=1,
+                job_id=job.id,
+                connection_id=7,
+            )
+
+            await db.refresh(job)
+            self.assertEqual((job.processed_items, job.total_items), (4, 4))
+
+    async def test_sync_items_leaves_the_jobs_running_total_alone(self):
+        """The pull sizes total_items across every library and step, and
+        processed_items accumulates across sync_items calls, so one call must
+        not overwrite the total with its own row count (it ended at 10 / 4)."""
+        from models.collection import CollectionSource
+        from models.media import MediaType
+        from models.sync import SyncJob
+
+        items = [
+            {"Id": "file-1", "SeriesId": "s-1", "ParentIndexNumber": 1, "IndexNumber": 1, "IndexNumberEnd": 3},
+            {"Id": "file-2", "SeriesId": "s-1", "ParentIndexNumber": 1, "IndexNumber": 4},
+        ]
+        async with self.Session() as db:
+            # 6 movies already processed; 6 + 4 episode rows planned in total.
+            job = SyncJob(user_id=1, source=CollectionSource.jellyfin, total_items=10, processed_items=6)
+            db.add(job)
+            await db.commit()
+
+            await sync.sync_items(
+                items=items,
+                media_type=MediaType.episode,
+                source=CollectionSource.jellyfin,
+                db=db,
+                stats={"movies": 0, "episodes": 0, "skipped": 0, "errors": 0},
+                user_id=1,
+                job_id=job.id,
+                connection_id=7,
+            )
+
+            await db.refresh(job)
+            self.assertEqual((job.processed_items, job.total_items), (10, 10))
 
 
 class PushWatchedBackToSourceTests(_PartialWatchDB):

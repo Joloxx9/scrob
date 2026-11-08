@@ -184,6 +184,7 @@ class UserSettings(Base):
     show_play_button : Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     shuffle_next_up : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     minimalist_next_up : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    next_up_by_recent_watch : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     next_up_hidden_shows : Mapped[Optional[list[int]]] = mapped_column(JSONB, server_default="'[]'")
     # Dropped is stronger than hidden - unlike next_up_hidden_shows, dropped
     # items are also excluded from the Calendar and from Discover/
@@ -196,6 +197,11 @@ class UserSettings(Base):
     # Collapse consecutive same-show episodes within a date on the History
     # page into one row instead of listing each individually (#391).
     condense_history_by_show : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Web UI language (e.g. "fr"). Null means the default, English.
+    # Distinct from profile.metadata_language, which only
+    # localizes TMDB/TVDB titles and overviews. The frontend mirrors it into
+    # the ui_language cookie so SSR can render in it without an extra call.
+    ui_language : Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     # Prompt to rate an item right after it finishes playing (homepage Now
     # Playing bar drops the session -> star-rating popup), separately per type (#177).
     rate_prompt_movies   : Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -207,6 +213,11 @@ class UserSettings(Base):
     # (#390). NULL/0 means "use the built-in minimum only" - see
     # core.watch_dedup.DEFAULT_DEDUP_WINDOW_MINUTES.
     duplicate_watch_window_minutes : Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Order key new shows start on when this user has made no per-show choice
+    # - see UserShowEpisodeOrder, which always wins. NULL inherits the
+    # server-wide default from GlobalSettings, the same override chain as
+    # tvdb_api_key above.
+    default_episode_order : Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
     # MDBList — API key authentication
     mdblist_api_key: Mapped[Optional[str]] = mapped_column(String(255))

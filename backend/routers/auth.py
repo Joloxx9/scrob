@@ -465,6 +465,9 @@ async def _settings_response(settings: UserSettings, db: AsyncSession) -> schema
     data.has_global_tvdb_key = bool(gs and gs.tvdb_api_key)
     data.has_effective_tvdb_key = bool(settings.tvdb_api_key) or data.has_global_tvdb_key
     data.has_global_mdblist_key = bool(gs and getattr(gs, "mdblist_api_key", None))
+    # What default_episode_order = NULL resolves to, so the settings page can
+    # label its "server default" option with the order it actually inherits.
+    data.server_episode_order = (gs.default_episode_order if gs else None) or "tmdb"
     # Same "all 4 fields set, user config first" rule as _effective_radarr/
     # _effective_sonarr in routers/media.py - inlined rather than imported to
     # avoid a routers.media <-> routers.auth cross-import.
@@ -514,7 +517,7 @@ async def update_user_settings(
         db.add(settings)
 
     # Computed read-only fields; never write them back
-    READ_ONLY_FIELDS = {"trakt_connected", "simkl_connected", "simkl_auth_v1", "wetrakr_connected", "mdblist_connected", "bingebase_connected", "has_rpdb_key", "has_global_tmdb_key", "has_effective_tmdb_key", "has_global_tvdb_key", "has_effective_tvdb_key", "has_global_mdblist_key"}
+    READ_ONLY_FIELDS = {"trakt_connected", "simkl_connected", "simkl_auth_v1", "wetrakr_connected", "mdblist_connected", "bingebase_connected", "has_rpdb_key", "has_global_tmdb_key", "has_effective_tmdb_key", "has_global_tvdb_key", "has_effective_tvdb_key", "has_global_mdblist_key", "server_episode_order"}
     update_data = {k: v for k, v in settings_in.model_dump(exclude_unset=True).items() if k not in READ_ONLY_FIELDS}
 
     new_rpdb_key = update_data.get("rpdb_api_key")
@@ -541,6 +544,23 @@ async def update_user_settings(
                 detail="TVDB rejected the key" + (" / PIN" if new_tvdb_pin else "")
                 + ". A subscriber-supported key needs its account PIN; a free project key needs no PIN.",
             )
+
+    # Stored normalised, so every reader can compare order keys rather than
+    # the legacy "tmdb"/"tvdb" spellings. A TVDB order needs a TVDB key, same
+    # requirement as the per-show switch in routers/shows.py.
+    if update_data.get("default_episode_order"):
+        from core.episode_order import validate_default_episode_order
+
+        try:
+            order_key = validate_default_episode_order(update_data["default_episode_order"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        update_data["default_episode_order"] = order_key
+        if order_key.startswith("tvdb:"):
+            from routers.shows import get_user_tvdb_key
+
+            if not await get_user_tvdb_key(db, current_user.id):
+                raise HTTPException(status_code=400, detail="TVDB API key not configured")
 
     if "mdblist_api_key" in update_data and update_data["mdblist_api_key"]:
         from core import mdblist
@@ -690,7 +710,8 @@ async def create_connection(
         sync_playback=body.sync_playback,
         push_watched=body.push_watched,
         push_collection=body.push_collection if cloud_media_provider else False,
-        push_playback=body.push_playback if cloud_media_provider else False,
+        # Plex takes resume points too (core/plex_progress.py).
+        push_playback=body.push_playback if cloud_media_provider or body.type == "plex" else False,
         push_ratings=body.push_ratings if not cloud_media_provider else False,
         auto_sync_interval=body.auto_sync_interval,
         auto_push_interval=body.auto_push_interval,
@@ -781,7 +802,10 @@ async def update_connection(
             update_data["push_playback"] = update_data.get("push_playback", conn.push_playback)
             update_data["push_collection"] = update_data.get("push_collection", conn.push_collection)
         else:
-            update_data["push_playback"] = False
+            if conn.type == "plex":
+                update_data["push_playback"] = update_data.get("push_playback", conn.push_playback)
+            else:
+                update_data["push_playback"] = False
             update_data["push_collection"] = False
 
     # Re-enabling a watchlist sync direction starts from a clean bootstrap: a

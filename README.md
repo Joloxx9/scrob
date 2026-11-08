@@ -603,6 +603,16 @@ Plex webhooks require a **Plex Pass** subscription.
 2. Paste your Scrob Plex webhook URL.
 3. In Scrob → Connections, enter your **Plex username** so events are attributed to the right account.
 
+#### Playback progress to Plex
+
+Turn on **Scrob → Plex → Playback progress** on a Plex connection to send Scrob's Continue Watching to Plex, so a movie or episode you stopped part way on another player (Kodi, Jellyfin, Emby, or an app using Scrob's player webhook) shows as in progress in Plex and resumes there.
+
+- **Push** and **Auto Push** write every resume point to Plex, looking titles up in the Plex libraries when Scrob hasn't seen them on that server yet. Auto Push skips positions it already sent.
+- A stop from a player other than Plex is sent right away, without waiting for Auto Push, for titles Scrob has already seen on that Plex server. Others follow on the next push.
+- Scrob never moves Plex backwards: a title Plex played more recently than Scrob recorded its position is left alone.
+
+Like the other Plex pushes, this uses the connection's token, so it sets the resume point of the Plex account that token belongs to.
+
 ### Emby
 
 1. In Emby, go to **Dashboard → Notifications → Add Notification → Webhook**.
@@ -756,6 +766,26 @@ npm run dev
 ```
 
 The frontend dev server starts on `http://localhost:4321` and proxies API calls to the backend on `7331`.
+
+### UI text and translations
+
+User-facing text lives in message catalogs in `frontend/messages/`, compiled by [Paraglide JS](https://inlang.com/m/gerre34r/library-inlang-paraglideJs). New text goes into `en.json`; the other catalogs hold its translations, and a string missing from one shows in English.
+
+1. Add a key to `frontend/messages/en.json`, prefixed with the page or area (`history_empty`). Reuse a `common_*` key when one fits.
+2. Call it in frontmatter or in a `<script>`: `import { m } from "../paraglide/messages.js"`, then `m.history_empty()`, or `m.episodes_left({ count })` with parameters. A key that doesn't exist fails `npm run build`.
+3. Format dates and numbers with the helpers in `frontend/src/lib/format.ts` (`formatDate`, `formatNumber`, ...) rather than `toLocaleString()`, so they follow the UI language and the viewer's region.
+
+In VS Code, the [Sherlock](https://marketplace.visualstudio.com/items?itemName=inlang.vs-code-extension) extension shows each message's English text next to its `m.*()` call, and extracts selected text into a new key.
+
+Plurals use the variant format (see `episodes_left` in `en.json`), with a `=*` catch-all. A message rendered with `set:html` may contain markup: pass every interpolated value through `escapeHtml` from `format.ts`.
+
+#### Adding a language
+
+1. Add its code to `locales` in `frontend/project.inlang/settings.json`, for example `["en", "fr", "de"]`. A regional variant is a tag such as `pt-PT` (European Portuguese, shipped); the file is then `pt-PT.json`.
+2. Create `frontend/messages/<code>.json` (copy `en.json` as a starting point) and translate the values. A key left out shows in English, so a partial translation works.
+3. Rebuild the frontend (restart the dev server if it is running).
+
+The language shows up in the pickers (Settings and the signed-out pages) on its own: English comes first, the rest follow in order of language code, and each is labelled in its own language ("Deutsch", "Français"), generated from the browser's built-in language data. The backend needs no change: it only checks that a saved code looks like a language code, and a code that isn't shipped falls back to English. English is the default, so a user only sees another language after picking it.
 
 </details>
 
