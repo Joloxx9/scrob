@@ -52,7 +52,7 @@ const total = shows.length + movies.length;
   {shows.length > 0 && (
     <section class="mb-12">
       <h2 class="section-headline mb-4">{m.common_shows()}</h2>
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
         {shows.map((s) => {
           const posterPath = ratingPosterUrl(tmdbImageUrl(s.poster_path, "w500"), { type: "series", tmdb_id: s.tmdb_id, tvdb_id: s.tvdb_id }, Astro.locals.hasRpdbKey);
           return (
@@ -98,7 +98,7 @@ const total = shows.length + movies.length;
   {movies.length > 0 && (
     <section class="mb-12">
       <h2 class="section-headline mb-4">{m.common_movies()}</h2>
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
         {movies.map((movie) => {
           const posterPath = ratingPosterUrl(tmdbImageUrl(movie.poster_path, "w500"), { type: "movie", tmdb_id: movie.tmdb_id }, Astro.locals.hasRpdbKey);
           return (

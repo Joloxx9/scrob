@@ -215,7 +215,7 @@ function skeletonWide() {
             <h2 class="section-headline">{m.discover_for_you()}</h2>
             <span class="text-xs text-zinc-500 font-medium">{m.discover_for_you_hint()}</span>
           </div>
-          <div id="for-you" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+          <div id="for-you" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
             <Fragment set:html={skeleton()} />
           </div>
         </section>
@@ -253,7 +253,7 @@ function skeletonWide() {
       <!-- Now Playing -->
       <section data-section class="mb-10">
         <h2 class="section-headline mb-5">{m.discover_now_playing()}</h2>
-        <div id="now-playing" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+        <div id="now-playing" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
           <Fragment set:html={skeleton()} />
         </div>
       </section>
@@ -261,7 +261,7 @@ function skeletonWide() {
       <!-- Trending Trailers -->
       <section data-section class="mb-10">
         <h2 class="section-headline mb-5">{m.discover_trending_trailers()}</h2>
-        <div id="trending-trailers" class="flex gap-4 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+        <div id="trending-trailers" class="flex gap-4 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
           <Fragment set:html={skeletonWide()} />
         </div>
       </section>
@@ -289,7 +289,7 @@ function skeletonWide() {
             <h2 class="section-headline">{m.discover_genre_movies({ genre: genreLabel(genre) })}</h2>
             <a href={`/movies?genre=${encodeURIComponent(genre)}`} class="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">{m.discover_see_all_arrow()}</a>
           </div>
-          <div id={`movie-genre-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+          <div id={`movie-genre-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
             <Fragment set:html={skeleton()} />
           </div>
         </section>
@@ -298,7 +298,7 @@ function skeletonWide() {
       <!-- Coming Soon -->
       <section data-section class="mb-10">
         <h2 class="section-headline mb-5">{m.discover_coming_soon()}</h2>
-        <div id="coming-soon" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+        <div id="coming-soon" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
           <Fragment set:html={skeleton()} />
         </div>
       </section>
@@ -322,7 +322,7 @@ function skeletonWide() {
       <!-- Top Rated Movies -->
       <section data-section class="mb-10">
         <h2 class="section-headline mb-5">{m.discover_top_rated_movies()}</h2>
-        <div id="top-rated-movies" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+        <div id="top-rated-movies" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
           <Fragment set:html={skeleton()} />
         </div>
       </section>
@@ -359,13 +359,13 @@ function skeletonWide() {
             <Fragment>
               <section data-section class="mb-6">
                 <h2 class="section-headline mb-5">{m.discover_on_provider({ provider: PROVIDER_NAMES[id] })}</h2>
-                <div id={`streaming-movie-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id={`streaming-movie-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeleton()} />
                 </div>
               </section>
               <section data-section class="mb-10">
                 <h2 class="section-headline mb-5">{m.discover_provider_shows({ provider: PROVIDER_NAMES[id] })}</h2>
-                <div id={`streaming-show-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id={`streaming-show-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeletonWide()} />
                 </div>
               </section>
@@ -375,37 +375,37 @@ function skeletonWide() {
             <Fragment>
               <section data-section class="mb-6">
                 <h2 class="section-headline mb-5">{m.discover_on_provider({ provider: "Netflix" })}</h2>
-                <div id="fallback-movie-0" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id="fallback-movie-0" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeleton()} />
                 </div>
               </section>
               <section data-section class="mb-10">
                 <h2 class="section-headline mb-5">{m.discover_provider_shows({ provider: "Netflix" })}</h2>
-                <div id="fallback-show-0" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id="fallback-show-0" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeletonWide()} />
                 </div>
               </section>
               <section data-section class="mb-6">
                 <h2 class="section-headline mb-5">{m.discover_on_provider({ provider: "Prime Video" })}</h2>
-                <div id="fallback-movie-1" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id="fallback-movie-1" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeleton()} />
                 </div>
               </section>
               <section data-section class="mb-10">
                 <h2 class="section-headline mb-5">{m.discover_provider_shows({ provider: "Prime Video" })}</h2>
-                <div id="fallback-show-1" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id="fallback-show-1" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeletonWide()} />
                 </div>
               </section>
               <section data-section class="mb-6">
                 <h2 class="section-headline mb-5">{m.discover_on_provider({ provider: "Disney+" })}</h2>
-                <div id="fallback-movie-2" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id="fallback-movie-2" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeleton()} />
                 </div>
               </section>
               <section data-section class="mb-10">
                 <h2 class="section-headline mb-5">{m.discover_provider_shows({ provider: "Disney+" })}</h2>
-                <div id="fallback-show-2" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+                <div id="fallback-show-2" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
                   <Fragment set:html={skeletonWide()} />
                 </div>
               </section>
@@ -436,7 +436,7 @@ function skeletonWide() {
             <h2 class="section-headline">{m.discover_genre_shows({ genre: genreLabel(genre) })}</h2>
             <a href={`/shows?genre=${encodeURIComponent(genre)}`} class="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">{m.discover_see_all_arrow()}</a>
           </div>
-          <div id={`show-genre-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+          <div id={`show-genre-${i}`} class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
             <Fragment set:html={skeletonWide()} />
           </div>
         </section>
@@ -445,7 +445,7 @@ function skeletonWide() {
       <!-- On Air This Week (backdrop) -->
       <section data-section class="mb-10">
         <h2 class="section-headline mb-5">{m.discover_on_air_this_week()}</h2>
-        <div id="on-air-this-week" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+        <div id="on-air-this-week" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
           <Fragment set:html={skeletonWide()} />
         </div>
       </section>
@@ -453,7 +453,7 @@ function skeletonWide() {
       <!-- Top Rated Shows (backdrop) -->
       <section data-section class="mb-10">
         <h2 class="section-headline mb-5">{m.discover_top_rated_shows()}</h2>
-        <div id="top-rated-shows" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+        <div id="top-rated-shows" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
           <Fragment set:html={skeletonWide()} />
         </div>
       </section>
@@ -464,7 +464,7 @@ function skeletonWide() {
           <h2 class="section-headline">{m.discover_hidden_gems()}</h2>
           <span class="text-xs text-zinc-500 font-medium">{m.discover_hidden_gems_hint()}</span>
         </div>
-        <div id="hidden-gems" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+        <div id="hidden-gems" class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
           <Fragment set:html={skeleton()} />
         </div>
       </section>

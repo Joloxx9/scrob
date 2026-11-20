@@ -256,7 +256,7 @@ const searchPrompt = m.search_prompt({ type: type ?? "" });
   )}
 
   {!isUserSearch && !isStudioSearch && (
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
       {results.map((item) => (
         <MediaCard item={item} />
       ))}
@@ -323,7 +323,7 @@ const searchPrompt = m.search_prompt({ type: type ?? "" });
           tvdbBtn.classList.add('hidden');
           tvdbResults.innerHTML = `
             <p class="group-label mb-4">${esc(m.search_tvdb_results())}</p>
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
               ${items.map((it) => `
                 <a href="/show/tvdb/${it.tvdb_id}" class="group">
                   <div class="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 group-hover:border-blue-500/50 transition-colors">

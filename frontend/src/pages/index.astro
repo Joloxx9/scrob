@@ -162,7 +162,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
         </div>
 
         {rest.length > 0 && (
-          <div class="relative flex gap-3 overflow-x-auto pb-3 scrollbar-none pt-6 -mx-6 px-6 md:mx-0 md:px-0">
+          <div class="relative flex gap-3 overflow-x-auto pb-3 scrollbar-none pt-6 -mx-3 px-3 md:mx-0 md:px-0">
             {rest.map((item) => <div class="flex-shrink-0 w-40"><MediaCard item={item} /></div>)}
           </div>
         )}
@@ -178,7 +178,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
           {m.common_see_all()} <span class="group-hover/all:translate-x-1 transition-transform">→</span>
         </a>
       </div>
-      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
         {nextUp.map((item) => (
           <div class="flex-shrink-0 w-56"><EpisodeCard item={item} /></div>
         ))}
@@ -245,7 +245,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
         </div>
 
         {rest.length > 0 && (
-          <div class="relative flex gap-3 overflow-x-auto pb-3 scrollbar-none pt-6 -mx-6 px-6 md:mx-0 md:px-0">
+          <div class="relative flex gap-3 overflow-x-auto pb-3 scrollbar-none pt-6 -mx-3 px-3 md:mx-0 md:px-0">
             {rest.map((item) => <div class="flex-shrink-0 w-40"><MediaCard item={item} /></div>)}
           </div>
         )}
@@ -261,7 +261,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
           {m.common_see_all()} <span class="group-hover/all:translate-x-1 transition-transform">→</span>
         </a>
       </div>
-      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
         {continueWatching.slice(0, 12).map((item) => (
           <div class="flex-shrink-0 w-40"><ContinueWatchingCard item={item} /></div>
         ))}
@@ -277,7 +277,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
           {m.common_see_all()} <span class="group-hover/all:translate-x-1 transition-transform">→</span>
         </a>
       </div>
-      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
         {recentMovies.results.map((item) => (
           <div class="flex-shrink-0 w-40"><MediaCard item={item} /></div>
         ))}
@@ -293,7 +293,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
           {m.common_see_all()} <span class="group-hover/all:translate-x-1 transition-transform">→</span>
         </a>
       </div>
-      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0">
+      <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0">
         {recentShows.results.map((item) => (
           <div class="flex-shrink-0 w-56"><EpisodeCard item={item} /></div>
         ))}
@@ -332,7 +332,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
             {m.common_see_all()} <span class="group-hover/all:translate-x-1 transition-transform">→</span>
           </a>
         </div>
-        <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0" id="grid-trending-movies">
+        <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0" id="grid-trending-movies">
           {Array.from({ length: 10 }).map(() => (
             <div class="flex-shrink-0 w-40 animate-pulse rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800">
               <div class="aspect-[2/3] bg-zinc-800"></div>
@@ -354,7 +354,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
               {m.common_see_all()} <span class="group-hover/all:translate-x-1 transition-transform">→</span>
             </a>
           </div>
-          <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0" id="grid-trending-shows">
+          <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0" id="grid-trending-shows">
             {Array.from({ length: 10 }).map(() => (
               <div class="flex-shrink-0 w-40 animate-pulse rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800">
                 <div class="aspect-[2/3] bg-zinc-800"></div>
@@ -376,7 +376,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
             {m.common_see_all()} <span class="group-hover/all:translate-x-1 transition-transform">→</span>
           </a>
         </div>
-        <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-6 px-6 md:mx-0 md:px-0" id="grid-airing-today">
+        <div class="flex gap-3 overflow-x-auto pb-3 scrollbar-none -mx-3 px-3 md:mx-0 md:px-0" id="grid-airing-today">
           {Array.from({ length: 10 }).map(() => (
             <div class="flex-shrink-0 w-56 animate-pulse rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800">
               <div class="aspect-[3/2] bg-zinc-800"></div>
@@ -465,7 +465,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3" fill="${watchActive ? 'currentColor' : 'none'}"/>
                 </svg>
-                <span class="text-[8px] font-bold uppercase tracking-wider leading-none">${isSeries ? `${watchPct}%` : esc(m.card_watched())}</span>
+                <span class="text-[8px] font-bold uppercase tracking-normal sm:tracking-wider leading-none">${isSeries ? `${watchPct}%` : esc(m.card_watched())}</span>
               </button>
               <button data-action="list" data-in-lists="${esc(JSON.stringify(inLists))}" data-state="${inLists.length > 0 ? 'active' : 'inactive'}" title="${esc(m.card_lists())}"
                 class="flex flex-col items-center justify-center gap-1 py-2.5 transition-all cursor-pointer border-r border-zinc-800/60 hover:brightness-125 ${inLists.length > 0 ? 'bg-sky-500/20 text-sky-400' : 'bg-zinc-900 text-zinc-400 hover:bg-sky-500/10 hover:text-sky-400'}">
@@ -473,7 +473,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
                   <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
                   <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
                 </svg>
-                <span class="text-[8px] font-bold uppercase tracking-wider leading-none">${esc(m.card_lists())}</span>
+                <span class="text-[8px] font-bold uppercase tracking-normal sm:tracking-wider leading-none">${esc(m.card_lists())}</span>
               </button>
               <button data-action="collected" data-in-library="${inLibrary}" data-collection-pct="${collectionPct}" data-state="${(inLibrary || collectionPct > 0) ? 'active' : 'inactive'}"
                 title="${esc(isSeries ? m.collection_pct_in_library({ pct: collectionPct }) : (inLibrary ? m.collection_in_collection() : m.collection_add()))}"
@@ -485,7 +485,7 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
                   <path d="M15 22v-4a3 3 0 0 0-6 0v4"/>
                   <path d="M2 7h20"/>
                 </svg>
-                <span class="text-[8px] font-bold uppercase tracking-wider leading-none">${isSeries ? `${collectionPct}%` : esc(m.card_collected())}</span>
+                <span class="text-[8px] font-bold uppercase tracking-normal sm:tracking-wider leading-none">${isSeries ? `${collectionPct}%` : esc(m.card_collected())}</span>
               </button>
             </div>` : ''}
             <a href="${esc(href)}" class="block p-3 bg-gradient-to-b from-zinc-900 to-zinc-950 flex-1">

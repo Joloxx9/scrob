@@ -28,7 +28,7 @@ const { title, items, href } = Astro.props;
       <p class="text-zinc-500 font-medium italic">{m.common_nothing_here_yet()}</p>
     </div>
   ) : (
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-6">
       {items.map(item => <MediaCard item={item} />)}
     </div>
   )}

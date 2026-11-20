@@ -121,7 +121,7 @@ if (!collection && !error) {
         {collection.parts.length > 0 && (
           <div class="mb-20">
             <h2 class="section-headline mb-6">{m.tmdb_collection_films()}</h2>
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6">
               {collection.parts.map((part) => (
                 <MediaCard item={part} />
               ))}
@@ -133,7 +133,7 @@ if (!collection && !error) {
         {collection.cast?.length > 0 && (
           <div class="border-t border-zinc-900 pt-16">
             <h2 class="text-3xl font-black text-zinc-100 tracking-tighter uppercase mb-10">{m.common_top_cast()}</h2>
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-6">
               {collection.cast.map((person) => (
                 <PersonCard person={person} subtitle={person.appearances > 1 ? m.tmdb_collection_appearances({ count: person.appearances }) : undefined} />
               ))}
