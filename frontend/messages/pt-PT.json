@@ -221,7 +221,7 @@
   "about_tmdb_notice": "Este produto utiliza a API do TMDB, mas não é apoiado nem certificado por {tmdb}. Os metadados são também fornecidos por {tvdb}.",
   "about_trademarks": "Todos os nomes de produtos, logótipos, marcas e marcas registadas apresentados no Scrob são propriedade dos respetivos proprietários e são usados apenas para identificar os serviços com que o Scrob interage. A sua utilização não implica qualquer afiliação ou apoio por parte deles.",
   "card_watched": "Visto",
-  "card_lists": "Listas",
+  "card_lists": "Watchlist",
   "card_collected": "Na coleção",
   "collection_pct_in_library": "{pct}% na biblioteca",
   "collection_remove": "Remover da coleção",

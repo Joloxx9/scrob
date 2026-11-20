@@ -1499,6 +1499,101 @@ const bottomNavItem = (active: boolean) =>
       });
     }
 
+
+    // ── Watchlist button ─────────────────────────────────────────────────────
+    let _watchlistIdPromise: Promise<number | null> | null = null;
+    function getWatchlistId(): Promise<number | null> {
+      if (!_watchlistIdPromise) {
+        _watchlistIdPromise = apiFetch('/lists/watchlist')
+          .then((d: { id?: number }) => (d?.id != null ? Number(d.id) : null))
+          .catch(() => { _watchlistIdPromise = null; return null; });
+      }
+      return _watchlistIdPromise;
+    }
+
+    const LIST_BTN_STATE_CLASSES = [
+      'bg-sky-500/20', 'bg-sky-500/50', 'text-sky-400', 'text-sky-300', 'hover:bg-sky-500/40', 'hover:bg-sky-400/50',
+      'bg-zinc-800', 'bg-zinc-900', 'text-zinc-500', 'text-zinc-400', 'hover:bg-sky-500/10', 'hover:text-sky-400', 'hover:text-sky-300',
+    ];
+    function setListBtnActive(btn: HTMLElement, active: boolean) {
+      btn.dataset.state = active ? 'active' : 'inactive';
+      const isCard = btn.parentElement?.classList.contains('grid');
+      btn.classList.remove(...LIST_BTN_STATE_CLASSES);
+      if (active) {
+        btn.classList.add(...(isCard ? ['bg-sky-500/20', 'text-sky-400'] : ['bg-sky-500/50', 'text-sky-300', 'hover:bg-sky-400/50']));
+      } else {
+        btn.classList.add(...(isCard
+          ? ['bg-zinc-900', 'text-zinc-400', 'hover:bg-sky-500/10', 'hover:text-sky-400']
+          : ['bg-zinc-800', 'text-zinc-500', 'hover:bg-sky-400/50', 'hover:text-sky-300']));
+      }
+    }
+
+    // Server-rendered buttons are "active" when the title is in any list;
+    // restyle them so they only light up for the Watchlist.
+    function syncWatchlistButtons(root: ParentNode, wlId: number) {
+      root.querySelectorAll<HTMLElement>('[data-action="list"]').forEach(btn => {
+        const ids: number[] = JSON.parse(btn.dataset.inLists ?? '[]');
+        const active = ids.includes(wlId);
+        if ((btn.dataset.state === 'active') !== active) setListBtnActive(btn, active);
+      });
+    }
+    if (TOKEN()) {
+      void getWatchlistId().then(wlId => {
+        if (wlId == null) return;
+        syncWatchlistButtons(document, wlId);
+        new MutationObserver(muts => {
+          for (const mu of muts) mu.addedNodes.forEach(n => { if (n instanceof HTMLElement) syncWatchlistButtons(n.parentElement ?? n, wlId); });
+        }).observe(document.body, { childList: true, subtree: true });
+      });
+    }
+
+    async function toggleWatchlist(btn: HTMLElement, tmdbId: string, mediaType: string, seasonNumberStr = '', mediaId = '') {
+      if (btn.dataset.busy === '1') return;
+      const wlId = await getWatchlistId();
+      if (wlId == null) return;
+      const tvdbOnly = btn.closest<HTMLElement>('[data-card]')?.dataset.tvdbOnly === 'true';
+      const ids: number[] = JSON.parse(btn.dataset.inLists ?? '[]');
+      const inWatchlist = ids.includes(wlId);
+      // season_number identifies a whole-season entry (media_type=series);
+      // episodes have their own tmdb_id and never carry one.
+      const seasonNumber = mediaType === 'series' && seasonNumberStr ? Number(seasonNumberStr) : null;
+      btn.dataset.busy = '1';
+      try {
+        if (!inWatchlist) {
+          const body: Record<string, unknown> = { media_type: mediaType };
+          if (tmdbId) body[tvdbOnly ? 'tvdb_id' : 'tmdb_id'] = Number(tmdbId);
+          if (mediaId) body.media_id = Number(mediaId);
+          if (seasonNumber != null) body.season_number = seasonNumber;
+          await apiFetch(`/lists/${wlId}/items`, 'POST', body);
+        } else {
+          const detail = await apiFetch(`/lists/${wlId}`);
+          const item = detail.items?.find((i: { media: { id?: number; tmdb_id: number | null; tvdb_id?: number | null; season_number: number | null } }) => {
+            const sameItem = tmdbId
+              ? (tvdbOnly
+                  ? !i.media?.tmdb_id && i.media?.tvdb_id === Number(tmdbId)
+                  : i.media?.tmdb_id === Number(tmdbId))
+              : !!mediaId && i.media?.id === Number(mediaId);
+            if (!sameItem) return false;
+            if (mediaType !== 'series') return true;
+            return (i.media?.season_number ?? null) === seasonNumber;
+          });
+          if (item) {
+            await apiFetch(`/lists/${wlId}/items/${item.id}`, 'DELETE');
+            const pageListId = window.location.pathname.match(/^\/list\/(\d+)/)?.[1];
+            if (pageListId === String(wlId)) {
+              document.querySelector(`[data-item-id="${item.id}"]`)?.remove();
+              const grid = document.getElementById('items-grid');
+              if (grid && grid.children.length === 0) document.getElementById('empty-state')?.classList.remove('hidden');
+            }
+          }
+        }
+        const updated = inWatchlist ? ids.filter(id => id !== wlId) : [...ids, wlId];
+        btn.dataset.inLists = JSON.stringify(updated);
+        setListBtnActive(btn, !inWatchlist);
+      } catch { /* leave the button as it was */ }
+      finally { delete btn.dataset.busy; }
+    }
+
     document.getElementById('list-popover-close')!.addEventListener('click', () => closeListPopover());
 
     document.getElementById('list-popover-create')!.addEventListener('click', () => {
@@ -2434,11 +2529,9 @@ const bottomNavItem = (active: boolean) =>
 
       } else if (action === 'list') {
         if (!tmdbId && !mediaId) { void showAlert(m.list_unmatched_title(), m.list_unmatched_item()); return; }
-        if (document.getElementById('list-popover')!.classList.contains('hidden') || _activeListBtn !== btn) {
-          openListPopover(btn, tmdbId, mediaType, card.dataset.season || '', mediaId);
-        } else {
-          closeListPopover();
-        }
+        // The button only adds to / removes from the native Watchlist (no
+        // list picker); other lists are managed from the Lists page.
+        await toggleWatchlist(btn, tmdbId, mediaType, card.dataset.season || '', mediaId);
 
       } else if (action === 'collected') {
         const season = card.dataset.season;

@@ -903,7 +903,7 @@ const sonarrUrl = `${origin}/api/proxy/sonarr-compat/${list?.id}`;
           data-action="list"
           data-in-lists="${esc(JSON.stringify(inLists))}"
           data-state="${inLists.length > 0 ? 'active' : 'inactive'}"
-          title="${esc(m.list_popover_title())}"
+          title="${esc(m.card_lists())}"
           class="flex flex-col items-center justify-center gap-1 py-2.5 transition-all cursor-pointer border-r border-zinc-800/60 hover:brightness-125 ${inLists.length > 0 ? 'bg-sky-500/20 text-sky-400' : 'bg-zinc-900 text-zinc-400 hover:bg-sky-500/10 hover:text-sky-400'}"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

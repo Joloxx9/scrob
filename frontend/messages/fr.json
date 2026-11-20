@@ -221,7 +221,7 @@
   "about_tmdb_notice": "Ce produit utilise l’API TMDB mais n’est ni approuvé ni certifié par {tmdb}. Des métadonnées sont également fournies par {tvdb}.",
   "about_trademarks": "Tous les noms de produits, logos, marques et marques déposées affichés dans Scrob appartiennent à leurs propriétaires respectifs et ne servent qu’à identifier les services avec lesquels Scrob fonctionne. Leur utilisation n’implique aucune affiliation avec eux ni approbation de leur part.",
   "card_watched": "Vu",
-  "card_lists": "Listes",
+  "card_lists": "Watchlist",
   "card_collected": "Collection",
   "collection_pct_in_library": "{pct} % dans la bibliothèque",
   "collection_remove": "Retirer de la collection",
