@@ -56,6 +56,7 @@ _CONNECTIONS_SETTINGS_FIELDS = (
     "mdblist_api_key", "mdblist_sync_watched", "mdblist_sync_ratings", "mdblist_sync_watchlist",
     "mdblist_push_watched", "mdblist_push_ratings", "mdblist_push_watchlist", "mdblist_sync_lists", "mdblist_push_collection", "mdblist_scrobble",
     "mdblist_auto_sync_interval", "mdblist_auto_push_interval",
+    "radarr_collection_sync_interval", "sonarr_collection_sync_interval",
 )
 
 _MEDIA_CONNECTION_FIELDS = (
@@ -81,6 +82,7 @@ _SAFE_SETTINGS_FIELDS = (
     "mdblist_sync_watched", "mdblist_sync_ratings", "mdblist_sync_watchlist",
     "mdblist_push_watched", "mdblist_push_ratings", "mdblist_push_watchlist", "mdblist_sync_lists", "mdblist_push_collection", "mdblist_scrobble",
     "mdblist_auto_sync_interval", "mdblist_auto_push_interval",
+    "radarr_collection_sync_interval", "sonarr_collection_sync_interval",
 )
 
 

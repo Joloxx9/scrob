@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import engine, Base
 import models # noqa: F401
-from routers import webhooks, media, history, ratings, sync, shows, auth, lists, oidc, profile, trakt, simkl, wetrakr, mdblist, bingebase, comments, admin, compat, export, yamtrack, calendar, saved_filters
+from routers import webhooks, media, history, ratings, sync, shows, auth, lists, oidc, profile, trakt, simkl, wetrakr, mdblist, bingebase, comments, admin, compat, export, yamtrack, calendar, saved_filters, arr_sync
 
 from core.access_log import install as install_access_log_redaction
 install_access_log_redaction()
@@ -45,6 +45,7 @@ async def _auto_sync_scheduler():
     from routers.simkl import run_simkl_sync, _run_simkl_push
     from routers.wetrakr import run_wetrakr_sync, _run_wetrakr_push
     from routers.mdblist import run_mdblist_sync, run_mdblist_push
+    from routers.arr_sync import run_radarr_collection_sync, run_sonarr_collection_sync
 
     # Trakt/Simkl/MDBList are single, user-level cloud connections (no
     # MediaServerConnection row, no connection_id) — same due-date logic as
@@ -91,6 +92,26 @@ async def _auto_sync_scheduler():
             ),
             "pull_runner": run_mdblist_sync,
             "push_runner": run_mdblist_push,
+        },
+        # Collection pull only. The URL/key may be the user's or server-wide,
+        # so the runner checks it and fails the job if neither is set.
+        {
+            "source": CollectionSource.radarr,
+            "connected_field": None,
+            "auto_sync_field": "radarr_collection_sync_interval",
+            "auto_push_field": None,
+            "push_flags": (),
+            "pull_runner": run_radarr_collection_sync,
+            "push_runner": None,
+        },
+        {
+            "source": CollectionSource.sonarr,
+            "connected_field": None,
+            "auto_sync_field": "sonarr_collection_sync_interval",
+            "auto_push_field": None,
+            "push_flags": (),
+            "pull_runner": run_sonarr_collection_sync,
+            "push_runner": None,
         },
     ]
 
@@ -222,6 +243,7 @@ async def _auto_sync_scheduler():
                             *[
                                 getattr(UserSettings, cfg["auto_push_field"]).isnot(None)
                                 for cfg in cloud_sync_config
+                                if cfg["auto_push_field"]
                             ],
                         )
                     )
@@ -232,10 +254,10 @@ async def _auto_sync_scheduler():
                     for cfg in cloud_sync_config:
                         source = cfg["source"]
                         auto_sync = getattr(settings_row, cfg["auto_sync_field"])
-                        auto_push = getattr(settings_row, cfg["auto_push_field"])
+                        auto_push = getattr(settings_row, cfg["auto_push_field"]) if cfg["auto_push_field"] else None
                         if auto_sync is None and auto_push is None:
                             continue
-                        if not getattr(settings_row, cfg["connected_field"]):
+                        if cfg["connected_field"] and not getattr(settings_row, cfg["connected_field"]):
                             continue
 
                         active_q = await db.execute(
@@ -894,6 +916,7 @@ app.include_router(yamtrack.router, prefix="/yamtrack", tags=["yamtrack"])
 app.include_router(calendar.router, prefix="/calendar", tags=["calendar"])
 app.include_router(saved_filters.router, prefix="/saved-filters", tags=["saved-filters"])
 app.include_router(compat.router, tags=["compat"])
+app.include_router(arr_sync.router, prefix="/arr", tags=["arr"])
 
 @app.get("/health")
 async def health():

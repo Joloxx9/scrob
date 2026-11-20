@@ -491,6 +491,7 @@ export interface UserSettings {
   radarr_quality_profile: number | null;
   radarr_tags: number[] | null;
   has_effective_radarr: boolean;
+  radarr_collection_sync_interval?: number | null;
 
   sonarr_url: string | null;
   sonarr_token: string | null;
@@ -498,6 +499,7 @@ export interface UserSettings {
   sonarr_quality_profile: number | null;
   sonarr_tags: number[] | null;
   has_effective_sonarr: boolean;
+  sonarr_collection_sync_interval?: number | null;
 
   // Trakt
   trakt_connected: boolean;

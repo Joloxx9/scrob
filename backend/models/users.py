@@ -59,6 +59,8 @@ class UserSettings(Base):
     radarr_quality_profile : Mapped[Optional[int]] = mapped_column(Integer)
     radarr_tags            : Mapped[Optional[list[int]]] = mapped_column(JSONB)
     radarr_customize_on_add : Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Collection pull from Radarr, in hours (null = disabled)
+    radarr_collection_sync_interval : Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Sonarr integration
     sonarr_url              : Mapped[Optional[str]] = mapped_column(String(500))
@@ -68,6 +70,8 @@ class UserSettings(Base):
     sonarr_tags             : Mapped[Optional[list[int]]] = mapped_column(JSONB)
     sonarr_season_folder    : Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     sonarr_customize_on_add : Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Collection pull from Sonarr, in hours (null = disabled)
+    sonarr_collection_sync_interval : Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Trakt OAuth app credentials (per-user)
     trakt_client_id          : Mapped[Optional[str]]      = mapped_column(String(255))

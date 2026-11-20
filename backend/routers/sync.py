@@ -144,6 +144,9 @@ _MEDIA_BROWSER_ITEM_SOURCES = (
     CollectionSource.nuvio,
     CollectionSource.stremio,
     CollectionSource.arvio,
+    # Radarr/Sonarr items are synthesised in Jellyfin's shape (core/arr_collection.py).
+    CollectionSource.radarr,
+    CollectionSource.sonarr,
 )
 
 
@@ -292,7 +295,8 @@ def provider_added_at(item: dict, source: CollectionSource) -> datetime | None:
         except (TypeError, ValueError, OSError, OverflowError):
             return None
 
-    if source in (CollectionSource.jellyfin, CollectionSource.emby, CollectionSource.arvio):
+    if source in (CollectionSource.jellyfin, CollectionSource.emby, CollectionSource.arvio,
+                  CollectionSource.radarr, CollectionSource.sonarr):
         raw = item.get("DateCreated")
         if not raw:
             return None

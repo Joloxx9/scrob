@@ -1454,8 +1454,22 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                     )}
                   </div>
                 </div>
-                <div class="border-t border-zinc-800 px-6 py-4 flex gap-2">
+                <div class="border-t border-zinc-800 px-6 py-5 space-y-3">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">{m.conn_arr_collection_sync()}</p>
+                  <p class="text-xs text-zinc-500">{m.conn_arr_collection_sync_hint({ app: "Radarr" })}</p>
+                  <div class="flex items-center justify-between gap-4">
+                    <label for="radarr_collection_sync_interval" class="text-sm text-zinc-300">{m.conn_pull_interval()}</label>
+                    <select id="radarr_collection_sync_interval" name="radarr_collection_sync_interval" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer">
+                      <option value="" selected={!settings.radarr_collection_sync_interval}>{m.conn_disabled()}</option>
+                      {AUTO_SYNC_INTERVAL_OPTIONS.map(({ value, label }) => (
+                        <option value={String(value)} selected={settings.radarr_collection_sync_interval === value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div class="border-t border-zinc-800 px-6 py-4 flex flex-wrap gap-2">
                   <button type="button" data-action="save_radarr_settings" class="js-action-btn text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors cursor-pointer">{m.conn_save_changes()}</button>
+                  <button type="button" data-action="sync_radarr_collection" class="js-action-btn text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-4 py-2 rounded-lg transition-colors cursor-pointer disabled:opacity-50">{m.conn_arr_sync_collection_now()}</button>
                 </div>
               </div>
             </div>
@@ -1535,8 +1549,22 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                     )}
                   </div>
                 </div>
-                <div class="border-t border-zinc-800 px-6 py-4 flex gap-2">
+                <div class="border-t border-zinc-800 px-6 py-5 space-y-3">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">{m.conn_arr_collection_sync()}</p>
+                  <p class="text-xs text-zinc-500">{m.conn_arr_collection_sync_hint({ app: "Sonarr" })}</p>
+                  <div class="flex items-center justify-between gap-4">
+                    <label for="sonarr_collection_sync_interval" class="text-sm text-zinc-300">{m.conn_pull_interval()}</label>
+                    <select id="sonarr_collection_sync_interval" name="sonarr_collection_sync_interval" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer">
+                      <option value="" selected={!settings.sonarr_collection_sync_interval}>{m.conn_disabled()}</option>
+                      {AUTO_SYNC_INTERVAL_OPTIONS.map(({ value, label }) => (
+                        <option value={String(value)} selected={settings.sonarr_collection_sync_interval === value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div class="border-t border-zinc-800 px-6 py-4 flex flex-wrap gap-2">
                   <button type="button" data-action="save_sonarr_settings" class="js-action-btn text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors cursor-pointer">{m.conn_save_changes()}</button>
+                  <button type="button" data-action="sync_sonarr_collection" class="js-action-btn text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-4 py-2 rounded-lg transition-colors cursor-pointer disabled:opacity-50">{m.conn_arr_sync_collection_now()}</button>
                 </div>
               </div>
             </div>
@@ -3623,6 +3651,10 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                 .filter((i: any) => i.type !== 'checkbox' || i.checked)
                 .map((i: any) => parseInt(i.value)),
               radarr_customize_on_add: (document.getElementById('radarr_customize_on_add') as HTMLInputElement)?.checked ?? false,
+              radarr_collection_sync_interval: (() => {
+                const v = (document.getElementById('radarr_collection_sync_interval') as HTMLSelectElement)?.value;
+                return v ? parseFloat(v) : null;
+              })(),
             };
             const radarrRes = await fetch('/api/proxy/auth/settings', {
               method: 'PATCH',
@@ -3650,6 +3682,10 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
                 .map((i: any) => parseInt(i.value)),
               sonarr_season_folder: (document.getElementById('sonarr_season_folder') as HTMLInputElement)?.checked ?? true,
               sonarr_customize_on_add: (document.getElementById('sonarr_customize_on_add') as HTMLInputElement)?.checked ?? false,
+              sonarr_collection_sync_interval: (() => {
+                const v = (document.getElementById('sonarr_collection_sync_interval') as HTMLSelectElement)?.value;
+                return v ? parseFloat(v) : null;
+              })(),
             };
             const sonarrRes = await fetch('/api/proxy/auth/settings', {
               method: 'PATCH',
@@ -3983,6 +4019,8 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
             );
             if (!ok) return;
             url = `/api/proxy/trakt/push`;
+          } else if (action === 'sync_radarr_collection' || action === 'sync_sonarr_collection') {
+            url = action === 'sync_radarr_collection' ? '/api/proxy/arr/radarr/sync' : '/api/proxy/arr/sonarr/sync';
           } else if (action === 'sync_mdblist') {
             const labels: Record<string, string> = {
               mdblist_sync_watched: m.conn_item_watched_history(),

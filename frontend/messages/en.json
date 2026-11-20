@@ -2376,5 +2376,8 @@
   "stats_no_plays_period": "No plays in this period.",
   "lists_import_job_lost": "Lost track of the import job (the server may have restarted). Check the list, then import again to top it up.",
   "settings_episode_order_saved_tvdb": "New shows will use TVDB ordering. Use \"Apply to all existing shows\" for the ones you already have.",
-  "settings_episode_order_saved_tmdb": "New shows will use TMDB ordering."
+  "settings_episode_order_saved_tmdb": "New shows will use TMDB ordering.",
+  "conn_arr_collection_sync": "Collection sync",
+  "conn_arr_collection_sync_hint": "Titles with a file in {app} are marked collected in Scrob, and leave the collection when the file is gone.",
+  "conn_arr_sync_collection_now": "Sync collection now"
 }

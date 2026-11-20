@@ -2376,5 +2376,8 @@
   "stats_no_plays_period": "Aucune lecture sur cette période.",
   "lists_import_job_lost": "Le suivi de l’importation a été perdu (le serveur a peut-être redémarré). Vérifiez la liste, puis relancez l’importation pour la compléter.",
   "settings_episode_order_saved_tvdb": "Les nouvelles séries utiliseront l’ordre TVDB. Utilisez « Appliquer à toutes les séries existantes » pour celles que vous avez déjà.",
-  "settings_episode_order_saved_tmdb": "Les nouvelles séries utiliseront l’ordre TMDB."
+  "settings_episode_order_saved_tmdb": "Les nouvelles séries utiliseront l’ordre TMDB.",
+  "conn_arr_collection_sync": "Synchronisation de la collection",
+  "conn_arr_collection_sync_hint": "Les titres avec un fichier dans {app} sont marqués comme dans la collection de Scrob, et en sortent quand le fichier disparaît.",
+  "conn_arr_sync_collection_now": "Synchroniser la collection"
 }

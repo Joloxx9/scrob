@@ -30,6 +30,8 @@ class CollectionSource(str, enum.Enum):
     manual   = "manual"
     tmdb     = "tmdb"
     yamtrack = "yamtrack"
+    radarr   = "radarr"
+    sonarr   = "sonarr"
 
 class PrivacyLevel(str, enum.Enum):
     public       = "public"

@@ -33,6 +33,8 @@ export const WATCH_SOURCE_LABELS: Record<string, string> = {
   wetrakr: "WeTrakr",
   bingebase: "Bingebase",
   yamtrack: "Yamtrack",
+  radarr: "Radarr",
+  sonarr: "Sonarr",
   scrob: "Scrob",
 };
 
